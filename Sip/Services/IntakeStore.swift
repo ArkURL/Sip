@@ -1,0 +1,161 @@
+//
+//  IntakeStore.swift
+//  Sip
+//
+
+import Foundation
+import Combine
+
+@MainActor
+final class IntakeStore: ObservableObject {
+    @Published private(set) var entries: [IntakeEntry] = []
+    @Published var settings: AppSettings {
+        didSet {
+            guard settings != oldValue else { return }
+            var clamped = settings
+            clamped.clamp()
+            if clamped != settings {
+                settings = clamped
+                return
+            }
+            persistSettings()
+            onStateChanged?()
+        }
+    }
+
+    /// Called after intake or settings change so reminders can reschedule.
+    var onStateChanged: (() -> Void)?
+
+    private let defaults: UserDefaults
+    private let entriesKey = "sip.todayEntries"
+    private let settingsKey = "sip.settings"
+    private let dayKeyStorage = "sip.lastActiveDay"
+
+    private var lastActiveDay: String
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: settingsKey),
+           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            var s = decoded
+            s.clamp()
+            self.settings = s
+        } else {
+            self.settings = .default
+        }
+        self.lastActiveDay = defaults.string(forKey: dayKeyStorage) ?? Date().dayKey
+        loadEntriesIfSameDay()
+        ensureCurrentDay()
+    }
+
+    // MARK: - Computed
+
+    var totalML: Int {
+        entries.reduce(0) { $0 + $1.amountML }
+    }
+
+    var remainingML: Int {
+        max(settings.dailyGoalML - totalML, 0)
+    }
+
+    var progress: Double {
+        guard settings.dailyGoalML > 0 else { return 0 }
+        return min(Double(totalML) / Double(settings.dailyGoalML), 1.0)
+    }
+
+    var progressPercent: Int {
+        Int((progress * 100).rounded())
+    }
+
+    var isGoalReached: Bool {
+        totalML >= settings.dailyGoalML
+    }
+
+    var statusText: String {
+        if totalML == 0 {
+            return "今天还没开始喝水"
+        } else if isGoalReached {
+            return "今日目标已达成 🎉"
+        } else {
+            return "还需 \(remainingML.mlDisplay)"
+        }
+    }
+
+    var sortedEntries: [IntakeEntry] {
+        entries.sorted { $0.timestamp > $1.timestamp }
+    }
+
+    // MARK: - Actions
+
+    @discardableResult
+    func addIntake(amountML: Int) -> IntakeEntry? {
+        guard amountML > 0 else { return nil }
+        ensureCurrentDay()
+        let entry = IntakeEntry(amountML: amountML)
+        entries.append(entry)
+        persistEntries()
+        onStateChanged?()
+        return entry
+    }
+
+    @discardableResult
+    func undoLast() -> IntakeEntry? {
+        ensureCurrentDay()
+        guard let last = sortedEntries.first,
+              let index = entries.firstIndex(where: { $0.id == last.id }) else {
+            return nil
+        }
+        let removed = entries.remove(at: index)
+        persistEntries()
+        onStateChanged?()
+        return removed
+    }
+
+    func removeEntry(id: UUID) {
+        ensureCurrentDay()
+        entries.removeAll { $0.id == id }
+        persistEntries()
+        onStateChanged?()
+    }
+
+    func ensureCurrentDay() {
+        let today = Date().dayKey
+        if lastActiveDay != today {
+            entries = []
+            lastActiveDay = today
+            defaults.set(today, forKey: dayKeyStorage)
+            persistEntries()
+            onStateChanged?()
+        }
+    }
+
+    func completeOnboarding() {
+        settings.hasCompletedOnboarding = true
+    }
+
+    // MARK: - Persistence
+
+    private func loadEntriesIfSameDay() {
+        let today = Date().dayKey
+        guard lastActiveDay == today,
+              let data = defaults.data(forKey: entriesKey),
+              let decoded = try? JSONDecoder().decode([IntakeEntry].self, from: data) else {
+            entries = []
+            return
+        }
+        entries = decoded
+    }
+
+    private func persistEntries() {
+        if let data = try? JSONEncoder().encode(entries) {
+            defaults.set(data, forKey: entriesKey)
+        }
+        defaults.set(lastActiveDay, forKey: dayKeyStorage)
+    }
+
+    private func persistSettings() {
+        if let data = try? JSONEncoder().encode(settings) {
+            defaults.set(data, forKey: settingsKey)
+        }
+    }
+}

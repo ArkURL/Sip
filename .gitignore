@@ -1,0 +1,94 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Xcode — user data
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode — build products
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# Xcode — packaging / symbols
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.app
+*.hmap
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+.swiftpm/config/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+Packages/
+Package.pins
+# Package.resolved  # uncomment if you prefer not to lock package versions
+
+# CocoaPods (if used later)
+Pods/
+# Do not ignore *.xcworkspace — Xcode projects ship project.xcworkspace
+
+# Carthage
+Carthage/Build/
+Carthage/Checkouts
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection / Accio
+iOSInjectionProject/
+accio/
+
+# IDEs / agents
+.idea/
+*.swp
+*~
+.vscode/
+.cursor/
+.claude/
+.grok/
+
+# Secrets & local env
+.env
+.env.*
+*.pem
+*.p12
+*.mobileprovision
+AuthKey_*.p8
+
+# Archives
+*.xcarchive
