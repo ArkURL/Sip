@@ -92,3 +92,6 @@ AuthKey_*.p8
 
 # Archives
 *.xcarchive
+
+# Local icon tooling
+.venv-icon/
