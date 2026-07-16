@@ -1,0 +1,54 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -scheme Sip \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Locate .app
+        id: app
+        run: |
+          APP_PATH=$(find build -name "Sip.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Sip.app not found"
+            exit 1
+          fi
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Zip .app
+        run: |
+          cd "$(dirname "${{ steps.app.outputs.path }}")"
+          ditto -c -k --sequesterRsrc --keepParent Sip.app Sip.zip
+
+      - name: Get version
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.tag }}
+          files: ${{ steps.app.outputs.path }}/../Sip.zip
+          generate_release_notes: true
