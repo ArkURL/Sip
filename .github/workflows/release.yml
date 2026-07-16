@@ -39,10 +39,59 @@ jobs:
 
       - name: Create DMG
         run: |
-          hdiutil create -volname "Sip" \
-            -srcfolder "${{ steps.app.outputs.path }}" \
-            -ov -format UDZO \
-            "Sip.dmg"
+          APP_PATH="${{ steps.app.outputs.path }}"
+          DMG_NAME="Sip.dmg"
+          STAGING_DIR=$(mktemp -d)
+          VOLUME_NAME="Sip"
+
+          # Copy .app and create Applications symlink
+          cp -R "$APP_PATH" "$STAGING_DIR/Sip.app"
+          ln -s /Applications "$STAGING_DIR/Applications"
+
+          # Create sparse DMG
+          hdiutil create -volname "$VOLUME_NAME" \
+            -srcfolder "$STAGING_DIR" \
+            -format UDRW \
+            -fs HFS+ \
+            "template.dmg"
+
+          # Mount, style with AppleScript, then convert
+          MOUNT_DIR=$(hdiutil attach -readwrite -noverify "template.dmg" | grep "/Volumes/$VOLUME_NAME" | awk '{print $NF}')
+
+          osascript <<APPLESCRIPT
+          tell application "Finder"
+            tell disk "$VOLUME_NAME"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set the bounds of container window to {200, 120, 860, 460}
+              set viewOptions to the icon view options of container window
+              set arrangement of viewOptions to not arranged
+              set icon size of viewOptions to 96
+              set background picture of viewOptions to file ".github:dmg_background.png"
+              set position of item "Sip.app" of container window to {180, 170}
+              set position of item "Applications" of container window to {480, 170}
+              close
+              open
+              update without registering applications
+              delay 2
+              close
+            end tell
+          end tell
+          APPLESCRIPT
+
+          # Force eject
+          hdiutil detach "$MOUNT_DIR" -force
+
+          # Convert to compressed DMG
+          hdiutil convert "template.dmg" \
+            -format UDZO \
+            -imagekey zlib-level=9 \
+            -o "$DMG_NAME"
+
+          rm -f "template.dmg"
+          rm -rf "$STAGING_DIR"
 
       - name: Get version
         id: version
