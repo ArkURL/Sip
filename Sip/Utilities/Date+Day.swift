@@ -26,6 +26,16 @@ extension Date {
         Calendar.current.component(.minute, from: self)
     }
 
+    /// `Calendar` weekday: 1 = Sunday … 7 = Saturday.
+    var weekday: Int {
+        Calendar.current.component(.weekday, from: self)
+    }
+
+    func isAllowedWeekday(_ allowed: Set<Int>) -> Bool {
+        let days = allowed.isEmpty ? Set(1...7) : allowed
+        return days.contains(weekday)
+    }
+
     func isInActiveHours(startHour: Int, endHour: Int) -> Bool {
         let hour = hourOfDay
         if startHour < endHour {
@@ -38,24 +48,47 @@ extension Date {
         }
     }
 
-    /// Next date when active window starts at `startHour:00` local time.
-    func nextActiveStart(startHour: Int, endHour: Int) -> Date {
+    /// Next moment when reminders may fire: an allowed weekday at `startHour:00`,
+    /// or `self` if already inside today's active window on an allowed day.
+    func nextReminderOpportunity(
+        startHour: Int,
+        endHour: Int,
+        allowedWeekdays: Set<Int>
+    ) -> Date {
         let calendar = Calendar.current
-        var components = calendar.dateComponents([.year, .month, .day], from: self)
-        components.hour = startHour
-        components.minute = 0
-        components.second = 0
+        let allowed = allowedWeekdays.isEmpty ? Set(1...7) : allowedWeekdays
 
-        guard var candidate = calendar.date(from: components) else { return self }
-
-        if isInActiveHours(startHour: startHour, endHour: endHour) {
+        if isAllowedWeekday(allowed), isInActiveHours(startHour: startHour, endHour: endHour) {
             return self
         }
 
-        if candidate <= self {
-            candidate = calendar.date(byAdding: .day, value: 1, to: candidate) ?? candidate
+        // Search today + next 7 days for the next valid window start.
+        for dayOffset in 0..<8 {
+            guard let day = calendar.date(byAdding: .day, value: dayOffset, to: calendar.startOfDay(for: self)) else {
+                continue
+            }
+            let dayWeekday = calendar.component(.weekday, from: day)
+            guard allowed.contains(dayWeekday) else { continue }
+
+            var components = calendar.dateComponents([.year, .month, .day], from: day)
+            components.hour = startHour
+            components.minute = 0
+            components.second = 0
+            guard let windowStart = calendar.date(from: components) else { continue }
+
+            if dayOffset == 0 {
+                // Today is allowed.
+                if self < windowStart {
+                    return windowStart
+                }
+                // After today's window — try later days.
+                continue
+            }
+            return windowStart
         }
-        return candidate
+
+        // Fallback: tomorrow at startHour (should be unreachable if allowed is non-empty).
+        return calendar.date(byAdding: .day, value: 1, to: self) ?? self
     }
 
     private static let dayKeyFormatter: DateFormatter = {

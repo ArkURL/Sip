@@ -54,6 +54,32 @@ final class SipTests: XCTestCase {
         XCTAssertEqual(settings.dailyGoalML, 5000)
     }
 
+    func testSettingsClampEmptyWeekdaysBecomesAll() {
+        var settings = AppSettings.default
+        settings.reminderWeekdays = []
+        settings.clamp()
+        XCTAssertEqual(settings.reminderWeekdays, AppSettings.allWeekdays)
+    }
+
+    func testSettingsDecodeMissingWeekdaysDefaultsToAll() throws {
+        // Legacy payload without reminderWeekdays must not fail decode / wipe settings.
+        let json = """
+        {
+          "dailyGoalML": 1800,
+          "reminderEnabled": true,
+          "reminderIntervalMinutes": 45,
+          "activeStartHour": 8,
+          "activeEndHour": 20,
+          "hasCompletedOnboarding": true
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertEqual(decoded.dailyGoalML, 1800)
+        XCTAssertEqual(decoded.reminderIntervalMinutes, 45)
+        XCTAssertEqual(decoded.reminderWeekdays, AppSettings.allWeekdays)
+        XCTAssertTrue(decoded.hasCompletedOnboarding)
+    }
+
     func testActiveHoursSameDay() {
         // 14:00 is in 9–21
         let date = calendarDate(hour: 14)
@@ -96,17 +122,64 @@ final class SipTests: XCTestCase {
         XCTAssertTrue(next > now)
     }
 
-    func testPersistenceRoundTrip() {
+    func testNextFireDateSkipsDisallowedWeekdays() {
+        let store = makeIsolatedStore()
+        let scheduler = ReminderScheduler(store: store)
+        // 2026-07-18 is a Saturday (Calendar weekday = 7).
+        let saturday = makeDate(year: 2026, month: 7, day: 18, hour: 10, minute: 0)
+        XCTAssertEqual(Calendar.current.component(.weekday, from: saturday), 7)
+
+        let next = scheduler.nextFireDate(
+            from: saturday,
+            intervalMinutes: 60,
+            startHour: 9,
+            endHour: 21,
+            allowedWeekdays: Set(AppSettings.workweekDays)
+        )
+
+        // Next workday is Monday 2026-07-20 at 09:00.
+        let cal = Calendar.current
+        XCTAssertEqual(cal.component(.weekday, from: next), 2) // Monday
+        XCTAssertEqual(cal.component(.hour, from: next), 9)
+        XCTAssertEqual(cal.component(.day, from: next), 20)
+        XCTAssertTrue(next > saturday)
+    }
+
+    func testNextFireDateFridayEveningJumpsToMonday() {
+        let store = makeIsolatedStore()
+        let scheduler = ReminderScheduler(store: store)
+        // 2026-07-17 Friday 20:30 — still before end hour 21, so in window;
+        // interval 60m lands at 21:30 outside window → next workday Monday 09:00.
+        let friday = makeDate(year: 2026, month: 7, day: 17, hour: 20, minute: 30)
+        XCTAssertEqual(Calendar.current.component(.weekday, from: friday), 6)
+
+        let next = scheduler.nextFireDate(
+            from: friday,
+            intervalMinutes: 60,
+            startHour: 9,
+            endHour: 21,
+            allowedWeekdays: Set(AppSettings.workweekDays)
+        )
+
+        let cal = Calendar.current
+        XCTAssertEqual(cal.component(.weekday, from: next), 2)
+        XCTAssertEqual(cal.component(.hour, from: next), 9)
+        XCTAssertEqual(cal.component(.day, from: next), 20)
+    }
+
+    func testPersistenceRoundTripIncludesWeekdays() {
         let suiteName = "SipTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let store1 = IntakeStore(defaults: defaults)
         store1.settings.dailyGoalML = 1800
+        store1.settings.reminderWeekdays = AppSettings.workweekDays
         store1.addIntake(amountML: 350)
 
         let store2 = IntakeStore(defaults: defaults)
         XCTAssertEqual(store2.settings.dailyGoalML, 1800)
+        XCTAssertEqual(store2.settings.reminderWeekdays, AppSettings.workweekDays)
         XCTAssertEqual(store2.totalML, 350)
         XCTAssertEqual(store2.entries.count, 1)
     }
@@ -120,10 +193,14 @@ final class SipTests: XCTestCase {
     }
 
     private func calendarDate(hour: Int, minute: Int = 0) -> Date {
+        makeDate(year: 2026, month: 7, day: 15, hour: hour, minute: minute)
+    }
+
+    private func makeDate(year: Int, month: Int, day: Int, hour: Int, minute: Int) -> Date {
         var components = DateComponents()
-        components.year = 2026
-        components.month = 7
-        components.day = 15
+        components.year = year
+        components.month = month
+        components.day = day
         components.hour = hour
         components.minute = minute
         return Calendar.current.date(from: components)!

@@ -27,7 +27,8 @@ final class ReminderScheduler {
             from: now,
             intervalMinutes: settings.reminderIntervalMinutes,
             startHour: settings.activeStartHour,
-            endHour: settings.activeEndHour
+            endHour: settings.activeEndHour,
+            allowedWeekdays: settings.reminderWeekdaySet
         )
 
         NotificationService.scheduleReminder(at: next, remainingML: store.remainingML)
@@ -38,20 +39,33 @@ final class ReminderScheduler {
         from now: Date,
         intervalMinutes: Int,
         startHour: Int,
-        endHour: Int
+        endHour: Int,
+        allowedWeekdays: Set<Int> = Set(1...7)
     ) -> Date {
         let interval = TimeInterval(max(intervalMinutes, 1) * 60)
+        let allowed = allowedWeekdays.isEmpty ? Set(1...7) : allowedWeekdays
 
-        if now.isInActiveHours(startHour: startHour, endHour: endHour) {
-            var candidate = now.addingTimeInterval(interval)
-            // If next interval falls outside today's active window, push to next active start.
-            if !candidate.isInActiveHours(startHour: startHour, endHour: endHour) {
-                candidate = candidate.nextActiveStart(startHour: startHour, endHour: endHour)
+        let inWindow = now.isAllowedWeekday(allowed)
+            && now.isInActiveHours(startHour: startHour, endHour: endHour)
+
+        if inWindow {
+            let candidate = now.addingTimeInterval(interval)
+            if candidate.isAllowedWeekday(allowed),
+               candidate.isInActiveHours(startHour: startHour, endHour: endHour) {
+                return candidate
             }
-            return candidate
+            // Interval landed outside today's window or on a disallowed day.
+            return candidate.nextReminderOpportunity(
+                startHour: startHour,
+                endHour: endHour,
+                allowedWeekdays: allowed
+            )
         }
 
-        // Outside active hours → fire when the next active window opens.
-        return now.nextActiveStart(startHour: startHour, endHour: endHour)
+        return now.nextReminderOpportunity(
+            startHour: startHour,
+            endHour: endHour,
+            allowedWeekdays: allowed
+        )
     }
 }

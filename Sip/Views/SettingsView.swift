@@ -96,7 +96,20 @@ struct SettingsView: View {
                         store.settings.activeEndHour = Calendar.current.component(.hour, from: newValue)
                     }
 
-                    Text("仅在未达标且处于活跃时段内发送提醒。")
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("提醒日期")
+                            .foregroundStyle(store.settings.reminderEnabled ? Color.primary : Color.secondary)
+
+                        HStack(spacing: 6) {
+                            ForEach(1...7, id: \.self) { weekday in
+                                weekdayToggle(weekday)
+                            }
+                        }
+                        .disabled(!store.settings.reminderEnabled)
+                    }
+                    .padding(.vertical, 4)
+
+                    Text("仅在选中的日期、活跃时段内，且未达标时发送提醒。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -107,12 +120,57 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            // Keep scrolling; hide the permanent scrollbar chrome.
+            .scrollIndicators(.hidden)
         }
-        .frame(width: 380, height: showsDismissButton ? 460 : 420)
+        .frame(width: 400, height: showsDismissButton ? 560 : 520)
         .onAppear {
             startTime = Self.date(hour: store.settings.activeStartHour)
             endTime = Self.date(hour: store.settings.activeEndHour)
         }
+    }
+
+    // MARK: - Weekday controls
+
+    private func weekdayToggle(_ weekday: Int) -> some View {
+        let label = AppSettings.weekdayShortLabels[weekday - 1]
+        let isOn = store.settings.reminderWeekdaySet.contains(weekday)
+
+        return Button {
+            toggleWeekday(weekday)
+        } label: {
+            Text(label)
+                .font(.callout.weight(isOn ? .semibold : .regular))
+                .foregroundStyle(isOn ? Color.white : Color.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isOn ? Color.cyan : Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(
+                            isOn ? Color.cyan.opacity(0.9) : Color.primary.opacity(0.12),
+                            lineWidth: isOn ? 0 : 1
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .help(isOn ? "已启用，点击关闭" : "已关闭，点击启用")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private func toggleWeekday(_ weekday: Int) {
+        var days = store.settings.reminderWeekdaySet
+        if days.contains(weekday) {
+            // Keep at least one day selected.
+            guard days.count > 1 else { return }
+            days.remove(weekday)
+        } else {
+            days.insert(weekday)
+        }
+        store.settings.reminderWeekdays = days.sorted()
     }
 
     private static func date(hour: Int) -> Date {

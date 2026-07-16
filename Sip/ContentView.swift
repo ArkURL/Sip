@@ -9,10 +9,12 @@ struct ContentView: View {
     @EnvironmentObject private var store: IntakeStore
     @State private var showSettings = false
 
-    var body: some View {
-        VStack(spacing: 20) {
-            header
+    /// Fixed window content size — avoids reflow/clip when the list goes from empty → entries.
+    private static let contentWidth: CGFloat = 380
+    private static let contentHeight: CGFloat = 560
 
+    var body: some View {
+        VStack(spacing: 16) {
             ProgressRingView(
                 progress: store.progress,
                 totalML: store.totalML,
@@ -30,12 +32,23 @@ struct ContentView: View {
                 onUndoLast: { store.undoLast() },
                 onDelete: { store.removeEntry(id: $0) }
             )
-
-            Spacer(minLength: 0)
         }
-        .padding(20)
-        .frame(minWidth: 360, idealWidth: 380, minHeight: 520, idealHeight: 560)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
+        // Hard size so Window(contentSize) does not jump when children change height.
+        .frame(width: Self.contentWidth, height: Self.contentHeight, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Label("设置", systemImage: "gearshape")
+                }
+                .help("设置")
+            }
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(store: store, showsDismissButton: true)
         }
@@ -44,25 +57,6 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.ensureCurrentDay()
-        }
-    }
-
-    private var header: some View {
-        HStack {
-            HStack(spacing: 6) {
-                Image(systemName: "drop.fill")
-                    .foregroundStyle(.cyan)
-                Text("Sip")
-                    .font(.title2.weight(.semibold))
-            }
-            Spacer()
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-            }
-            .buttonStyle(.borderless)
-            .help("设置")
         }
     }
 }

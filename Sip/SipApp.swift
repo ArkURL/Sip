@@ -34,6 +34,7 @@ struct SipApp: App {
                 }
         }
         .defaultSize(width: 380, height: 560)
+        // Content view uses a fixed frame; contentSize keeps the chrome stable when list updates.
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
