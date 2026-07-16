@@ -37,10 +37,12 @@ jobs:
           fi
           echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Zip .app
+      - name: Create DMG
         run: |
-          cd "$(dirname "${{ steps.app.outputs.path }}")"
-          ditto -c -k --sequesterRsrc --keepParent Sip.app Sip.zip
+          hdiutil create -volname "Sip" \
+            -srcfolder "${{ steps.app.outputs.path }}" \
+            -ov -format UDZO \
+            "Sip.dmg"
 
       - name: Get version
         id: version
@@ -50,5 +52,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.version.outputs.tag }}
-          files: ${{ steps.app.outputs.path }}/../Sip.zip
-          generate_release_notes: true
+          files: Sip.dmg
+          body: |
+            ## Sip ${{ steps.version.outputs.tag }}
+
+            ### 安装说明
+
+            1. 下载 `Sip.dmg`
+            2. 双击打开，将 Sip 拖入 Applications 文件夹
+            3. 首次打开时，**右键 → 打开**（或在终端运行以下命令后双击打开）：
+               ```bash
+               xattr -cr /Applications/Sip.app
+               ```
+            4. 如果提示通知权限，点击「允许」
