@@ -13,7 +13,8 @@ struct SipApp: App {
     @State private var showOnboarding = false
 
     var body: some Scene {
-        WindowGroup {
+        // `Window` is single-instance (unlike WindowGroup, which can spawn many).
+        Window("Sip", id: Self.mainWindowID) {
             ContentView()
                 .environmentObject(store)
                 .onAppear {
@@ -39,7 +40,7 @@ struct SipApp: App {
         }
 
         MenuBarExtra {
-            menuBarContent
+            MenuBarMenuView(store: store)
         } label: {
             menuBarLabel
         }
@@ -49,7 +50,9 @@ struct SipApp: App {
         }
     }
 
-    // MARK: - Menu Bar
+    static let mainWindowID = "main"
+
+    // MARK: - Menu Bar Label
 
     @ViewBuilder
     private var menuBarLabel: some View {
@@ -67,8 +70,28 @@ struct SipApp: App {
         return "\(store.progressPercent)%"
     }
 
-    @ViewBuilder
-    private var menuBarContent: some View {
+    // MARK: - Lifecycle
+
+    private func setupIfNeeded() {
+        if scheduler == nil {
+            let s = ReminderScheduler(store: store)
+            scheduler = s
+            store.onStateChanged = { [weak s] in
+                s?.reschedule()
+            }
+            s.reschedule()
+        }
+        store.ensureCurrentDay()
+    }
+}
+
+// MARK: - Menu Bar Content
+
+private struct MenuBarMenuView: View {
+    @ObservedObject var store: IntakeStore
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
         Text(menuBarSummary)
             .font(.headline)
 
@@ -94,8 +117,8 @@ struct SipApp: App {
             openMainWindow()
         }
 
-        Button("设置…") {
-            openSettings()
+        SettingsLink {
+            Text("设置…")
         }
 
         Divider()
@@ -109,38 +132,40 @@ struct SipApp: App {
         "\(store.totalML) / \(store.settings.dailyGoalML) ml"
     }
 
-    // MARK: - Lifecycle
-
-    private func setupIfNeeded() {
-        if scheduler == nil {
-            let s = ReminderScheduler(store: store)
-            scheduler = s
-            store.onStateChanged = { [weak s] in
-                s?.reschedule()
-            }
-            s.reschedule()
-        }
-        store.ensureCurrentDay()
-    }
-
     private func openMainWindow() {
         NSApplication.shared.activate(ignoringOtherApps: true)
-        if let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) {
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            // Fallback: open via URL-less show — trigger first WindowGroup
-            for window in NSApplication.shared.windows {
+
+        // Prefer focusing an existing main window — never open a second one.
+        if let existing = Self.findMainWindow() {
+            existing.deminiaturize(nil)
+            existing.makeKeyAndOrderFront(nil)
+            existing.orderFrontRegardless()
+            return
+        }
+
+        openWindow(id: SipApp.mainWindowID)
+
+        DispatchQueue.main.async {
+            if let window = Self.findMainWindow() {
                 window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
             }
         }
     }
 
-    private func openSettings() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        if #available(macOS 14.0, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
+    private static func findMainWindow() -> NSWindow? {
+        // Main UI is taller than the settings sheet/window (~560 vs ~420).
+        NSApp.windows
+            .filter { window in
+                guard window.canBecomeKey else { return false }
+                let name = window.className
+                if name.contains("NSStatusBar") || name.contains("NSPopupMenu") || name.contains("NSMenu") {
+                    return false
+                }
+                let size = window.frame.size
+                return size.width >= 300 && size.height >= 480
+            }
+            .sorted { $0.frame.height > $1.frame.height }
+            .first
     }
 }

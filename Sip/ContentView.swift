@@ -37,7 +37,7 @@ struct ContentView: View {
         .frame(minWidth: 360, idealWidth: 380, minHeight: 520, idealHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
         .sheet(isPresented: $showSettings) {
-            SettingsView(store: store)
+            SettingsView(store: store, showsDismissButton: true)
         }
         .onAppear {
             store.ensureCurrentDay()
