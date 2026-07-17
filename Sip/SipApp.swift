@@ -22,6 +22,7 @@ struct SipApp: App {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(session.scheduler)
+                .environmentObject(session.notificationPermission)
                 .background(MainWindowIdentifierBinder())
                 .onAppear {
                     session.startIfNeeded()
@@ -36,6 +37,7 @@ struct SipApp: App {
                     OnboardingView(store: store) {
                         showOnboarding = false
                         session.scheduler.reschedule(force: true)
+                        Task { await session.notificationPermission.refresh() }
                     }
                     .interactiveDismissDisabled()
                 }
@@ -57,9 +59,11 @@ struct SipApp: App {
 
         Settings {
             SettingsView(store: store)
+                .environmentObject(session.notificationPermission)
                 .onAppear {
                     // Settings is also a real window; keep Dock while it is open.
                     DockPolicy.showInDock()
+                    Task { await session.notificationPermission.refresh() }
                 }
         }
     }
@@ -96,9 +100,11 @@ struct SipApp: App {
 final class AppSession: ObservableObject {
     let store: IntakeStore
     let scheduler: ReminderScheduler
+    let notificationPermission: NotificationPermissionModel
     private var dayMonitor: DayLifecycleMonitor?
     private var storeObservation: AnyCancellable?
     private var schedulerObservation: AnyCancellable?
+    private var permissionObservation: AnyCancellable?
     private var didStart = false
     /// Coalesces rapid settings edits (goal slider) into one force reschedule.
     private var settingsRescheduleWork: DispatchWorkItem?
@@ -108,12 +114,14 @@ final class AppSession: ObservableObject {
         let store = IntakeStore()
         self.store = store
         self.scheduler = ReminderScheduler(store: store)
+        self.notificationPermission = NotificationPermissionModel()
         wire()
     }
 
     init(store: IntakeStore) {
         self.store = store
         self.scheduler = ReminderScheduler(store: store)
+        self.notificationPermission = NotificationPermissionModel()
         wire()
     }
 
@@ -126,6 +134,9 @@ final class AppSession: ObservableObject {
             self?.objectWillChange.send()
         }
         schedulerObservation = scheduler.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        permissionObservation = notificationPermission.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
     }
@@ -170,6 +181,7 @@ final class AppSession: ObservableObject {
         // reminder is not pushed later just because the UI appeared.
         store.ensureCurrentDay()
         scheduler.reschedule(force: false)
+        Task { await notificationPermission.refresh() }
     }
 }
 

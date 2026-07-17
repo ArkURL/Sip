@@ -8,6 +8,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var store: IntakeStore
     @EnvironmentObject private var scheduler: ReminderScheduler
+    @EnvironmentObject private var notificationPermission: NotificationPermissionModel
     @State private var showSettings = false
 
     /// Fixed window content size — avoids reflow/clip when the list goes from empty → entries.
@@ -53,6 +54,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(store: store, showsDismissButton: true)
+                .environmentObject(notificationPermission)
         }
         .onAppear {
             // Soft only — opening the main window must not delay an already-scheduled reminder.

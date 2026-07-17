@@ -5,7 +5,51 @@
 
 import Foundation
 import AppKit
+import Combine
 import UserNotifications
+
+/// Long-lived mirror of `UNUserNotificationCenter` auth so Settings UI does not
+/// get stuck on the `@State` default (`.notDetermined`) when the view tree is rebuilt.
+@MainActor
+final class NotificationPermissionModel: ObservableObject {
+    @Published private(set) var status: UNAuthorizationStatus = .notDetermined
+
+    var isAllowed: Bool {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .denied, .notDetermined:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    var statusLabel: String {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            return String(localized: "Allowed")
+        case .denied:
+            return String(localized: "Denied")
+        case .notDetermined:
+            return String(localized: "Not set")
+        @unknown default:
+            return String(localized: "Unknown")
+        }
+    }
+
+    func refresh() async {
+        let latest = await NotificationService.authorizationStatus()
+        #if DEBUG
+        if latest != status {
+            print("Sip: notification auth \(status.rawValue) → \(latest.rawValue)")
+        }
+        #endif
+        // Always assign so first refresh after launch publishes even when still notDetermined
+        // is rare; more importantly, authorized/denied always replace the default.
+        status = latest
+    }
+}
 
 enum NotificationService {
     static let reminderIdentifier = "sip.water.reminder"
@@ -29,7 +73,7 @@ enum NotificationService {
         prepareForSystemPermissionUI()
 
         let center = UNUserNotificationCenter.current()
-        let current = await center.notificationSettings().authorizationStatus
+        let current = await authorizationStatus()
         switch current {
         case .authorized, .provisional, .ephemeral:
             return true
@@ -51,9 +95,19 @@ enum NotificationService {
         }
     }
 
+    /// Uses the completion-handler API (more reliable on macOS than the async property
+    /// in some menu-bar / accessory activation states).
     static func authorizationStatus() async -> UNAuthorizationStatus {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let settings = await notificationSettings()
         return settings.authorizationStatus
+    }
+
+    static func notificationSettings() async -> UNNotificationSettings {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings)
+            }
+        }
     }
 
     /// Ensures Dock presence + key app status so system sheets/alerts can appear.

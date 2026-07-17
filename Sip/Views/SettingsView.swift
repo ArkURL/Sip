@@ -11,10 +11,11 @@ struct SettingsView: View {
     /// When presented as a sheet from the main window, show an explicit dismiss control.
     var showsDismissButton: Bool = false
 
+    @EnvironmentObject private var notificationPermission: NotificationPermissionModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var startTime: Date = SettingsView.date(hour: 9, minute: 0)
     @State private var endTime: Date = SettingsView.date(hour: 21, minute: 0)
-    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
 
     var body: some View {
         VStack(spacing: 0) {
@@ -137,10 +138,18 @@ struct SettingsView: View {
                 hour: store.settings.activeEndHour,
                 minute: store.settings.activeEndMinute
             )
-            Task { await refreshNotificationStatus() }
+        }
+        // Prefer `.task` over onAppear+Task so refresh is tied to view lifetime and
+        // always re-runs when Settings is re-opened.
+        .task {
+            await notificationPermission.refresh()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await notificationPermission.refresh() }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await refreshNotificationStatus() }
+            Task { await notificationPermission.refresh() }
         }
     }
 
@@ -152,43 +161,35 @@ struct SettingsView: View {
         HStack {
             Text("Notifications")
             Spacer()
-            Text(notificationStatusLabel)
+            Text(notificationPermission.statusLabel)
                 .foregroundStyle(.secondary)
                 .font(.callout)
+                // Force Text identity to follow status so Form rows do not keep a stale label.
+                .id(notificationPermission.status.rawValue)
         }
 
-        if notificationStatus == .denied {
+        switch notificationPermission.status {
+        case .denied:
             Text("Notifications are off in System Settings, so reminders will not appear.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("Open System Settings…") {
                 NotificationService.openSystemNotificationSettings()
             }
-        } else if notificationStatus == .notDetermined {
+        case .notDetermined:
             Button("Allow Notifications…") {
                 Task { await allowNotificationsTapped() }
             }
-        }
-    }
-
-    private var notificationStatusLabel: String {
-        switch notificationStatus {
-        case .authorized, .provisional, .ephemeral:
-            return String(localized: "Allowed")
-        case .denied:
-            return String(localized: "Denied")
-        case .notDetermined:
-            return String(localized: "Not set")
-        @unknown default:
-            return String(localized: "Unknown")
+        default:
+            EmptyView()
         }
     }
 
     @MainActor
     private func allowNotificationsTapped() async {
-        let previous = notificationStatus
+        let previous = notificationPermission.status
         let granted = await NotificationService.requestAuthorization()
-        await refreshNotificationStatus()
+        await notificationPermission.refresh()
 
         if granted {
             // Permission may have been missing when earlier schedules were attempted.
@@ -199,14 +200,9 @@ struct SettingsView: View {
         // If the system alert never appeared, status stays `.notDetermined` — open
         // Settings so the click always has a visible result. Do not bounce the user
         // into Settings immediately after they explicitly tapped Don't Allow.
-        if notificationStatus == .notDetermined || previous == .denied {
+        if notificationPermission.status == .notDetermined || previous == .denied {
             NotificationService.openSystemNotificationSettings()
         }
-    }
-
-    @MainActor
-    private func refreshNotificationStatus() async {
-        notificationStatus = await NotificationService.authorizationStatus()
     }
 
     // MARK: - Weekday controls
@@ -288,4 +284,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(store: IntakeStore(), showsDismissButton: true)
+        .environmentObject(NotificationPermissionModel())
 }
