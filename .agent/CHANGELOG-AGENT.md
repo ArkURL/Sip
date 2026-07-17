@@ -4,14 +4,15 @@
 
 ---
 
-## 2026-07-17 — 修复设置页「允许通知」无响应
+## 2026-07-17 — Release 1.1.4：修复设置页「允许通知」无响应
 
 - **问题**：设置里点「允许通知…」无系统弹窗、状态也不变。  
 - **原因**：菜单栏 accessory 模式下未先激活 App，`requestAuthorization` 可能静默失败；Form 内嵌套 `VStack+Button` 点击命中不稳；授权成功后未 force 重调度。  
 - **修复**：请求权限前 `DockPolicy.showInDock` + `NSApp.activate`；扁平 Form 行；授权成功 `refreshRemindersAfterPermissionChange`；弹窗未出现时回退打开系统通知设置。  
-- **文件**：`NotificationService.swift`, `SettingsView.swift`, `IntakeStore.swift`, `SipApp.swift`  
+- **版本**：1.1.3 → **1.1.4**，build 5 → **6**。  
+- **文件**：`NotificationService.swift`, `SettingsView.swift`, `IntakeStore.swift`, `SipApp.swift`, `project.pbxproj`, README*  
 - **验证**：build OK；SipTests 32 passed  
-- **提交**：本条一并 commit  
+- **提交 / tag**：`v1.1.4`  
 
 ## 2026-07-17 — Release 1.1.3：P0/P1 提醒修复 + 中优先级 polish
 
