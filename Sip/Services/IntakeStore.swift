@@ -8,6 +8,16 @@ import Combine
 
 @MainActor
 final class IntakeStore: ObservableObject {
+    /// How reminder scheduling should react to a store mutation.
+    enum ChangeKind: Equatable {
+        /// Recompute next fire from now (log sip, undo last, day roll).
+        case force
+        /// Keep existing future fire; refresh notification content if needed (e.g. mid-list delete).
+        case soft
+        /// Settings changed — AppSession debounces force reschedule so sliders do not thrash.
+        case settings
+    }
+
     @Published private(set) var entries: [IntakeEntry] = []
     @Published var settings: AppSettings {
         didSet {
@@ -19,12 +29,12 @@ final class IntakeStore: ObservableObject {
                 return
             }
             persistSettings()
-            onStateChanged?()
+            onStateChanged?(.settings)
         }
     }
 
     /// Called after intake or settings change so reminders can reschedule.
-    var onStateChanged: (() -> Void)?
+    var onStateChanged: ((ChangeKind) -> Void)?
 
     private let defaults: UserDefaults
     private let entriesKey = "sip.todayEntries"
@@ -94,7 +104,7 @@ final class IntakeStore: ObservableObject {
         let entry = IntakeEntry(amountML: amountML)
         entries.append(entry)
         persistEntries()
-        onStateChanged?()
+        onStateChanged?(.force)
         return entry
     }
 
@@ -107,15 +117,22 @@ final class IntakeStore: ObservableObject {
         }
         let removed = entries.remove(at: index)
         persistEntries()
-        onStateChanged?()
+        onStateChanged?(.force)
         return removed
     }
 
     func removeEntry(id: UUID) {
         ensureCurrentDay()
+        let beforeGoal = isGoalReached
         entries.removeAll { $0.id == id }
         persistEntries()
-        onStateChanged?()
+        // Editing history should not push the next reminder later.
+        // Only force when deleting un-reaches or reaches the goal boundary.
+        if beforeGoal != isGoalReached {
+            onStateChanged?(.force)
+        } else {
+            onStateChanged?(.soft)
+        }
     }
 
     /// Clears yesterday’s intake when the local calendar day changes.
@@ -128,7 +145,7 @@ final class IntakeStore: ObservableObject {
         lastActiveDay = today
         defaults.set(today, forKey: dayKeyStorage)
         persistEntries()
-        onStateChanged?()
+        onStateChanged?(.force)
         return true
     }
 

@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-07-17 — Release 1.1.3：P0/P1 提醒修复 + 中优先级 polish
+
+### P0 / P1
+- **间隔链**：`chainTimer`（fire+1.5s soft reschedule），菜单栏 accessory 不依赖 `willPresent`。  
+- **调度结果**：`scheduleReminder` → `async Bool`；开日标记仅 `add` 成功后写入。  
+- **点通知开窗**：`MainWindowPresenter` + `.sipOpenMainWindow`。  
+- **时段分钟 + 结束含本分钟**：`activeStart/EndMinute`；旧 JSON 分钟缺省 0。  
+- **通知权限 UI**：设置页状态 + 系统设置 / 再请求。  
+
+### 中优先级
+- **设置 debounce**：`ChangeKind.settings` → AppSession 0.35s 合并 force（滑块不 thrash）。  
+- **删记录**：未跨达标线 → `soft` 保留下次提醒；跨达标线 → `force`。记水/撤销/日切仍 `force`。  
+- **主窗识别**：`MainWindowIdentifierBinder` 打 `identifier = "main"`；`findMainWindow` 优先 id。  
+
+### 版本 / 验证
+- **版本**：1.1.2 → **1.1.3**，build 4 → **5**。  
+- **SipTests**：32 passed。  
+- **提交 / tag**：`v1.1.3`  
+
 ## 2026-07-17 — 修复打开主界面推迟下次提醒 → 1.1.2
 
 - **问题**：关主窗口后未记水，再从菜单栏打开 Sip 时，下次提醒被重算为「打开时刻 + 间隔」，把原定时间往后推。  

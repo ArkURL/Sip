@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct SettingsView: View {
     @ObservedObject var store: IntakeStore
@@ -11,8 +12,9 @@ struct SettingsView: View {
     var showsDismissButton: Bool = false
 
     @Environment(\.dismiss) private var dismiss
-    @State private var startTime: Date = SettingsView.date(hour: 9)
-    @State private var endTime: Date = SettingsView.date(hour: 21)
+    @State private var startTime: Date = SettingsView.date(hour: 9, minute: 0)
+    @State private var endTime: Date = SettingsView.date(hour: 21, minute: 0)
+    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,6 +68,8 @@ struct SettingsView: View {
                         set: { store.settings.reminderEnabled = $0 }
                     ))
 
+                    notificationPermissionRow
+
                     Picker("Interval", selection: Binding(
                         get: { store.settings.reminderIntervalMinutes },
                         set: { store.settings.reminderIntervalMinutes = $0 }
@@ -83,7 +87,7 @@ struct SettingsView: View {
                     )
                     .disabled(!store.settings.reminderEnabled)
                     .onChange(of: startTime) { _, newValue in
-                        store.settings.activeStartHour = Calendar.current.component(.hour, from: newValue)
+                        applyStartTime(newValue)
                     }
 
                     DatePicker(
@@ -93,7 +97,7 @@ struct SettingsView: View {
                     )
                     .disabled(!store.settings.reminderEnabled)
                     .onChange(of: endTime) { _, newValue in
-                        store.settings.activeEndHour = Calendar.current.component(.hour, from: newValue)
+                        applyEndTime(newValue)
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
@@ -109,7 +113,7 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 4)
 
-                    Text("Only on selected days, during active hours, and before you hit the goal.")
+                    Text("Only on selected days, from start through end (inclusive), and before you hit the goal.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -123,11 +127,72 @@ struct SettingsView: View {
             // Keep scrolling; hide the permanent scrollbar chrome.
             .scrollIndicators(.hidden)
         }
-        .frame(width: 400, height: showsDismissButton ? 560 : 520)
+        .frame(width: 400, height: showsDismissButton ? 620 : 580)
         .onAppear {
-            startTime = Self.date(hour: store.settings.activeStartHour)
-            endTime = Self.date(hour: store.settings.activeEndHour)
+            startTime = Self.date(
+                hour: store.settings.activeStartHour,
+                minute: store.settings.activeStartMinute
+            )
+            endTime = Self.date(
+                hour: store.settings.activeEndHour,
+                minute: store.settings.activeEndMinute
+            )
+            Task { await refreshNotificationStatus() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await refreshNotificationStatus() }
+        }
+    }
+
+    // MARK: - Notification permission
+
+    @ViewBuilder
+    private var notificationPermissionRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Notifications")
+                Spacer()
+                Text(notificationStatusLabel)
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+            }
+
+            if notificationStatus == .denied {
+                Text("Notifications are off in System Settings, so reminders will not appear.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Open System Settings…") {
+                    NotificationService.openSystemNotificationSettings()
+                }
+                .disabled(!store.settings.reminderEnabled)
+            } else if notificationStatus == .notDetermined {
+                Button("Allow Notifications…") {
+                    Task {
+                        _ = await NotificationService.requestAuthorization()
+                        await refreshNotificationStatus()
+                    }
+                }
+                .disabled(!store.settings.reminderEnabled)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var notificationStatusLabel: String {
+        switch notificationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return String(localized: "Allowed")
+        case .denied:
+            return String(localized: "Denied")
+        case .notDetermined:
+            return String(localized: "Not set")
+        @unknown default:
+            return String(localized: "Unknown")
+        }
+    }
+
+    private func refreshNotificationStatus() async {
+        notificationStatus = await NotificationService.authorizationStatus()
     }
 
     // MARK: - Weekday controls
@@ -173,10 +238,27 @@ struct SettingsView: View {
         store.settings.reminderWeekdays = days.sorted()
     }
 
-    private static func date(hour: Int) -> Date {
+    private func applyStartTime(_ date: Date) {
+        let cal = Calendar.current
+        var s = store.settings
+        s.activeStartHour = cal.component(.hour, from: date)
+        s.activeStartMinute = cal.component(.minute, from: date)
+        store.settings = s
+    }
+
+    private func applyEndTime(_ date: Date) {
+        let cal = Calendar.current
+        var s = store.settings
+        s.activeEndHour = cal.component(.hour, from: date)
+        s.activeEndMinute = cal.component(.minute, from: date)
+        store.settings = s
+    }
+
+    private static func date(hour: Int, minute: Int) -> Date {
         var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
         components.hour = hour
-        components.minute = 0
+        components.minute = minute
+        components.second = 0
         return Calendar.current.date(from: components) ?? Date()
     }
 

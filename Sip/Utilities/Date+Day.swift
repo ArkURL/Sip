@@ -9,6 +9,8 @@ extension Date {
     /// Local calendar day key, e.g. "2026-07-15"
     var dayKey: String {
         let formatter = Date.dayKeyFormatter
+        // Keep timezone current so long-running menu-bar processes survive travel/DST.
+        formatter.timeZone = TimeZone.current
         return formatter.string(from: self)
     }
 
@@ -26,6 +28,11 @@ extension Date {
         Calendar.current.component(.minute, from: self)
     }
 
+    /// Minutes from local midnight (0…1439).
+    var minutesFromMidnight: Int {
+        hourOfDay * 60 + minuteOfHour
+    }
+
     /// `Calendar` weekday: 1 = Sunday … 7 = Saturday.
     var weekday: Int {
         Calendar.current.component(.weekday, from: self)
@@ -36,29 +43,56 @@ extension Date {
         return days.contains(weekday)
     }
 
-    func isInActiveHours(startHour: Int, endHour: Int) -> Bool {
-        let hour = hourOfDay
-        if startHour < endHour {
-            return hour >= startHour && hour < endHour
-        } else if startHour > endHour {
-            // Overnight window, e.g. 22–6
-            return hour >= startHour || hour < endHour
+    /// Active window check. End time is **inclusive of that minute**
+    /// (e.g. end 21:00 → still active at 21:00, not at 21:01).
+    func isInActiveHours(
+        startHour: Int,
+        startMinute: Int = 0,
+        endHour: Int,
+        endMinute: Int = 0
+    ) -> Bool {
+        let now = minutesFromMidnight
+        let start = startHour * 60 + startMinute
+        let end = endHour * 60 + endMinute
+        if start < end {
+            return now >= start && now <= end
+        } else if start > end {
+            // Overnight window, e.g. 22:00–06:30
+            return now >= start || now <= end
         } else {
             return false
         }
     }
 
-    /// Next moment when reminders may fire: an allowed weekday at `startHour:00`,
+    /// Convenience using `AppSettings` active window fields.
+    func isInActiveHours(settings: AppSettings) -> Bool {
+        isInActiveHours(
+            startHour: settings.activeStartHour,
+            startMinute: settings.activeStartMinute,
+            endHour: settings.activeEndHour,
+            endMinute: settings.activeEndMinute
+        )
+    }
+
+    /// Next moment when reminders may fire: an allowed weekday at start time,
     /// or `self` if already inside today's active window on an allowed day.
     func nextReminderOpportunity(
         startHour: Int,
+        startMinute: Int = 0,
         endHour: Int,
+        endMinute: Int = 0,
         allowedWeekdays: Set<Int>
     ) -> Date {
         let calendar = Calendar.current
         let allowed = allowedWeekdays.isEmpty ? Set(1...7) : allowedWeekdays
 
-        if isAllowedWeekday(allowed), isInActiveHours(startHour: startHour, endHour: endHour) {
+        if isAllowedWeekday(allowed),
+           isInActiveHours(
+            startHour: startHour,
+            startMinute: startMinute,
+            endHour: endHour,
+            endMinute: endMinute
+           ) {
             return self
         }
 
@@ -72,7 +106,7 @@ extension Date {
 
             var components = calendar.dateComponents([.year, .month, .day], from: day)
             components.hour = startHour
-            components.minute = 0
+            components.minute = startMinute
             components.second = 0
             guard let windowStart = calendar.date(from: components) else { continue }
 
@@ -87,13 +121,13 @@ extension Date {
             return windowStart
         }
 
-        // Fallback: tomorrow at startHour (should be unreachable if allowed is non-empty).
+        // Fallback: tomorrow at start (should be unreachable if allowed is non-empty).
         return calendar.date(byAdding: .day, value: 1, to: self) ?? self
     }
 
     private static let dayKeyFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.calendar = Calendar.current
+        f.calendar = Calendar(identifier: .gregorian)
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone.current
         f.dateFormat = "yyyy-MM-dd"

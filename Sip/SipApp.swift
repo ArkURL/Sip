@@ -22,6 +22,7 @@ struct SipApp: App {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(session.scheduler)
+                .background(MainWindowIdentifierBinder())
                 .onAppear {
                     session.startIfNeeded()
                     showOnboarding = !store.settings.hasCompletedOnboarding
@@ -99,15 +100,26 @@ final class AppSession: ObservableObject {
     private var storeObservation: AnyCancellable?
     private var schedulerObservation: AnyCancellable?
     private var didStart = false
+    /// Coalesces rapid settings edits (goal slider) into one force reschedule.
+    private var settingsRescheduleWork: DispatchWorkItem?
+    private static let settingsDebounce: TimeInterval = 0.35
 
     init() {
         let store = IntakeStore()
         self.store = store
-        let scheduler = ReminderScheduler(store: store)
-        self.scheduler = scheduler
-        store.onStateChanged = { [weak scheduler] in
-            // Intake / settings / day roll must recompute from now.
-            scheduler?.reschedule(force: true)
+        self.scheduler = ReminderScheduler(store: store)
+        wire()
+    }
+
+    init(store: IntakeStore) {
+        self.store = store
+        self.scheduler = ReminderScheduler(store: store)
+        wire()
+    }
+
+    private func wire() {
+        store.onStateChanged = { [weak self] kind in
+            self?.handleStoreChange(kind)
         }
         // Forward store + scheduler updates so MenuBarExtra / main UI re-render.
         storeObservation = store.objectWillChange.sink { [weak self] _ in
@@ -118,18 +130,23 @@ final class AppSession: ObservableObject {
         }
     }
 
-    init(store: IntakeStore) {
-        self.store = store
-        let scheduler = ReminderScheduler(store: store)
-        self.scheduler = scheduler
-        store.onStateChanged = { [weak scheduler] in
-            scheduler?.reschedule(force: true)
-        }
-        storeObservation = store.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
-        schedulerObservation = scheduler.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
+    private func handleStoreChange(_ kind: IntakeStore.ChangeKind) {
+        switch kind {
+        case .force:
+            settingsRescheduleWork?.cancel()
+            settingsRescheduleWork = nil
+            scheduler.reschedule(force: true)
+        case .soft:
+            // Do not cancel a pending settings debounce — slider may still be moving.
+            scheduler.reschedule(force: false)
+        case .settings:
+            settingsRescheduleWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.scheduler.reschedule(force: true)
+                self?.settingsRescheduleWork = nil
+            }
+            settingsRescheduleWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.settingsDebounce, execute: work)
         }
     }
 
@@ -205,6 +222,76 @@ enum DockPolicy {
     }
 }
 
+// MARK: - Main window presentation
+
+@MainActor
+enum MainWindowPresenter {
+    static let windowID = SipApp.mainWindowID
+
+    /// Focus an existing main window, or ask SwiftUI to open one.
+    /// - Parameter openWindow: Optional SwiftUI action; when nil, posts `.sipOpenMainWindow`
+    ///   so a scene that holds `@Environment(\.openWindow)` can complete the open.
+    static func present(openWindow: OpenWindowAction? = nil) {
+        DockPolicy.showInDock()
+        NSApplication.shared.activate(ignoringOtherApps: true)
+
+        if let existing = findMainWindow() {
+            existing.deminiaturize(nil)
+            existing.makeKeyAndOrderFront(nil)
+            existing.orderFrontRegardless()
+            return
+        }
+
+        if let openWindow {
+            openWindow(id: windowID)
+            DispatchQueue.main.async {
+                if let window = findMainWindow() {
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                }
+            }
+        } else {
+            NotificationCenter.default.post(name: .sipOpenMainWindow, object: nil)
+        }
+    }
+
+    static func findMainWindow() -> NSWindow? {
+        let id = NSUserInterfaceItemIdentifier(windowID)
+        // Prefer explicit identifier set by `MainWindowIdentifierBinder`.
+        if let tagged = NSApp.windows.first(where: { $0.identifier == id && $0.canBecomeKey }) {
+            return tagged
+        }
+        // Fallback geometry (main ~560 tall vs settings ~420–520) for first frame before tag applies.
+        return NSApp.windows
+            .filter { window in
+                guard window.canBecomeKey else { return false }
+                let name = window.className
+                if name.contains("NSStatusBar") || name.contains("NSPopupMenu") || name.contains("NSMenu") {
+                    return false
+                }
+                let size = window.frame.size
+                return size.width >= 300 && size.height >= 480
+            }
+            .sorted { $0.frame.height > $1.frame.height }
+            .first
+    }
+}
+
+/// Tags the hosting `NSWindow` so menu-bar / notification open paths do not rely on height heuristics.
+private struct MainWindowIdentifierBinder: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            view.window?.identifier = NSUserInterfaceItemIdentifier(SipApp.mainWindowID)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.window?.identifier = NSUserInterfaceItemIdentifier(SipApp.mainWindowID)
+    }
+}
+
 // MARK: - AppDelegate
 
 @MainActor
@@ -261,6 +348,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ) {
         Task { @MainActor in
             NotificationCenter.default.post(name: .sipDayRefreshNeeded, object: nil)
+            // Default / banner click → bring the main UI forward for logging a sip.
+            if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+                MainWindowPresenter.present()
+            }
         }
         completionHandler()
     }
@@ -295,7 +386,7 @@ private struct MenuBarMenuView: View {
         Divider()
 
         Button(String(localized: "Open Sip")) {
-            openMainWindow()
+            MainWindowPresenter.present(openWindow: openWindow)
         }
 
         SettingsLink {
@@ -307,48 +398,17 @@ private struct MenuBarMenuView: View {
         Button(String(localized: "Quit Sip")) {
             NSApplication.shared.terminate(nil)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sipOpenMainWindow)) { _ in
+            MainWindowPresenter.present(openWindow: openWindow)
+        }
     }
 
     private var menuBarSummary: String {
         "\(store.totalML) / \(store.settings.dailyGoalML) ml"
     }
+}
 
-    private func openMainWindow() {
-        // Accessory → regular must happen before activate/show, or the window may not front.
-        DockPolicy.showInDock()
-        NSApplication.shared.activate(ignoringOtherApps: true)
-
-        // Prefer focusing an existing main window — never open a second one.
-        if let existing = Self.findMainWindow() {
-            existing.deminiaturize(nil)
-            existing.makeKeyAndOrderFront(nil)
-            existing.orderFrontRegardless()
-            return
-        }
-
-        openWindow(id: SipApp.mainWindowID)
-
-        DispatchQueue.main.async {
-            if let window = Self.findMainWindow() {
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
-            }
-        }
-    }
-
-    private static func findMainWindow() -> NSWindow? {
-        // Main UI is taller than the settings sheet/window (~560 vs ~420).
-        NSApp.windows
-            .filter { window in
-                guard window.canBecomeKey else { return false }
-                let name = window.className
-                if name.contains("NSStatusBar") || name.contains("NSPopupMenu") || name.contains("NSMenu") {
-                    return false
-                }
-                let size = window.frame.size
-                return size.width >= 300 && size.height >= 480
-            }
-            .sorted { $0.frame.height > $1.frame.height }
-            .first
-    }
+extension Notification.Name {
+    /// Ask a scene that holds `openWindow` to present the main Sip window.
+    static let sipOpenMainWindow = Notification.Name("sip.openMainWindow")
 }

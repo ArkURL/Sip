@@ -10,7 +10,9 @@ struct AppSettings: Equatable {
     var reminderEnabled: Bool
     var reminderIntervalMinutes: Int
     var activeStartHour: Int
+    var activeStartMinute: Int
     var activeEndHour: Int
+    var activeEndMinute: Int
     /// Calendar weekday values: 1 = Sunday … 7 = Saturday (same as `Calendar.Component.weekday`).
     var reminderWeekdays: [Int]
     var hasCompletedOnboarding: Bool
@@ -20,7 +22,9 @@ struct AppSettings: Equatable {
         reminderEnabled: true,
         reminderIntervalMinutes: 60,
         activeStartHour: 9,
+        activeStartMinute: 0,
         activeEndHour: 21,
+        activeEndMinute: 0,
         reminderWeekdays: Array(1...7),
         hasCompletedOnboarding: false
     )
@@ -45,6 +49,16 @@ struct AppSettings: Equatable {
         Set(reminderWeekdays)
     }
 
+    /// Minutes from midnight for the active window start.
+    var activeStartMinutesFromMidnight: Int {
+        activeStartHour * 60 + activeStartMinute
+    }
+
+    /// Minutes from midnight for the active window end (inclusive of this minute).
+    var activeEndMinutesFromMidnight: Int {
+        activeEndHour * 60 + activeEndMinute
+    }
+
     mutating func clamp() {
         dailyGoalML = min(max(dailyGoalML, Self.goalRange.lowerBound), Self.goalRange.upperBound)
         if !Self.intervalOptions.contains(reminderIntervalMinutes) {
@@ -52,8 +66,11 @@ struct AppSettings: Equatable {
         }
         activeStartHour = min(max(activeStartHour, 0), 23)
         activeEndHour = min(max(activeEndHour, 0), 23)
-        if activeStartHour == activeEndHour {
+        activeStartMinute = min(max(activeStartMinute, 0), 59)
+        activeEndMinute = min(max(activeEndMinute, 0), 59)
+        if activeStartMinutesFromMidnight == activeEndMinutesFromMidnight {
             activeEndHour = (activeStartHour + 12) % 24
+            activeEndMinute = activeStartMinute
         }
 
         var days = Set(reminderWeekdays.filter { (1...7).contains($0) })
@@ -77,7 +94,9 @@ extension AppSettings: Codable {
         case reminderEnabled
         case reminderIntervalMinutes
         case activeStartHour
+        case activeStartMinute
         case activeEndHour
+        case activeEndMinute
         case reminderWeekdays
         case hasCompletedOnboarding
     }
@@ -89,7 +108,9 @@ extension AppSettings: Codable {
         reminderIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .reminderIntervalMinutes)
             ?? Self.default.reminderIntervalMinutes
         activeStartHour = try c.decodeIfPresent(Int.self, forKey: .activeStartHour) ?? Self.default.activeStartHour
+        activeStartMinute = try c.decodeIfPresent(Int.self, forKey: .activeStartMinute) ?? 0
         activeEndHour = try c.decodeIfPresent(Int.self, forKey: .activeEndHour) ?? Self.default.activeEndHour
+        activeEndMinute = try c.decodeIfPresent(Int.self, forKey: .activeEndMinute) ?? 0
         // Missing key → all days (preserve previous “every day” behavior for existing users).
         reminderWeekdays = try c.decodeIfPresent([Int].self, forKey: .reminderWeekdays) ?? Self.allWeekdays
         hasCompletedOnboarding = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)
@@ -102,7 +123,9 @@ extension AppSettings: Codable {
         try c.encode(reminderEnabled, forKey: .reminderEnabled)
         try c.encode(reminderIntervalMinutes, forKey: .reminderIntervalMinutes)
         try c.encode(activeStartHour, forKey: .activeStartHour)
+        try c.encode(activeStartMinute, forKey: .activeStartMinute)
         try c.encode(activeEndHour, forKey: .activeEndHour)
+        try c.encode(activeEndMinute, forKey: .activeEndMinute)
         try c.encode(reminderWeekdays, forKey: .reminderWeekdays)
         try c.encode(hasCompletedOnboarding, forKey: .hasCompletedOnboarding)
     }

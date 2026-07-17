@@ -22,8 +22,17 @@ final class DayLifecycleMonitor {
     }
 
     deinit {
-        // Timer invalidation is safe; NotificationCenter tokens need main-thread removal.
         midnightTimer?.invalidate()
+        // Observers are process-lifetime for AppSession; tear down if monitor is replaced.
+        if let dayChangeObserver {
+            NotificationCenter.default.removeObserver(dayChangeObserver)
+        }
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
+        if let externalRefreshObserver {
+            NotificationCenter.default.removeObserver(externalRefreshObserver)
+        }
     }
 
     func start() {

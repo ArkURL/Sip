@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import AppKit
 import UserNotifications
 
 enum NotificationService {
@@ -40,7 +41,10 @@ enum NotificationService {
         cancelAllReminders()
     }
 
-    static func scheduleReminder(at date: Date, kind: ReminderKind) {
+    /// Schedules a one-shot local notification.
+    /// - Returns: `true` when the request was accepted by the system.
+    @discardableResult
+    static func scheduleReminder(at date: Date, kind: ReminderKind) async -> Bool {
         let identifier: String
         let content = UNMutableNotificationContent()
         content.sound = .default
@@ -72,6 +76,32 @@ enum NotificationService {
             trigger: trigger
         )
 
-        UNUserNotificationCenter.current().add(request)
+        return await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error {
+                    #if DEBUG
+                    print("Sip: failed to schedule notification \(identifier): \(error.localizedDescription)")
+                    #endif
+                    continuation.resume(returning: false)
+                } else {
+                    continuation.resume(returning: true)
+                }
+            }
+        }
+    }
+
+    /// Opens System Settings → Notifications (best-effort across macOS versions).
+    @MainActor
+    static func openSystemNotificationSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.notifications",
+            "x-apple.systempreferences:com.apple.preference.notifications?id=\(Bundle.main.bundleIdentifier ?? "com.liao.Sip")"
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
     }
 }

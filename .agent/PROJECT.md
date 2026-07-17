@@ -144,11 +144,12 @@ Sip/
 - `dailyGoalML` 默认 2000，范围 500…5000  
 - `reminderEnabled` 默认 true  
 - `reminderIntervalMinutes` 默认 60，可选 30/45/60/90/120  
-- `activeStartHour` / `activeEndHour` 默认 9–21  
+- `activeStartHour` / `activeStartMinute` / `activeEndHour` / `activeEndMinute` 默认 9:00–21:00  
+- 活跃判定：**结束时刻含该分钟**（21:00 仍可提醒，21:01 不可）  
 - `reminderWeekdays`：`[Int]`，Calendar weekday **1=周日 … 7=周六**；默认全部；`clamp` 时空数组回退为全周  
 - `hasCompletedOnboarding`  
 - `quickAmounts`：`[100, 150, 250, 350, 500]`  
-- Codable 兼容：旧 JSON 缺 `reminderWeekdays` 时 decode 为全周（不整份失败）
+- Codable 兼容：旧 JSON 缺 `reminderWeekdays` / 分钟字段时 decode 为全周、分钟 0
 
 **IntakeStore**（`@MainActor` + `ObservableObject`）
 
@@ -164,9 +165,12 @@ Sip/
 - 活跃时段外 / 非选中星期 → `nextReminderOpportunity` 跳到下一允许日的时段起点  
 - `nextFireDate(..., allowedWeekdays:)` 对单测开放  
 - **`reschedule(force:)`**（易错）：  
-  - `force: true` — 记水 / 改设置 / 跨日 / 引导完成 → 从 `now` 重算间隔  
-  - `force: false` — 开主窗 / becomeActive / 生命周期 tick → **保留**已提交的未来 fire（`sip.nextScheduledFire`），避免「打开界面就把提醒往后推」  
-  - 到期后 soft 刷新因 fire 已过期会自动排下一轮
+  - `force: true` — 记水 / 撤销最近 / 跨日 / 引导完成 / 设置（debounce 后）→ 从 `now` 重算  
+  - `force: false` — 开主窗 / becomeActive / 生命周期 tick / **删中间记录（未跨达标）** → 保留未来 fire  
+  - `IntakeStore.ChangeKind`：`.force` / `.soft` / `.settings`（0.35s debounce）  
+  - **`chainTimer`**：display fire +1.5s soft reschedule（菜单栏链不断）  
+  - 系统 `add` 成功后才 `markDayStartNotified`  
+  - 主窗：`identifier = "main"`（`MainWindowIdentifierBinder`），勿只靠高度找窗
 
 ### 4.2 日切策略
 

@@ -23,9 +23,19 @@ final class ReminderScheduler: ObservableObject {
     /// do not push the reminder later.
     private let nextFireKey = "sip.nextScheduledFire"
 
+    /// Ensures the interval chain continues in menu-bar / accessory mode where
+    /// `willPresent` often does not run after a banner is delivered.
+    private var chainTimer: Timer?
+    /// Drops stale async schedule completions when a newer `reschedule` started.
+    private var scheduleGeneration = 0
+
     init(store: IntakeStore, defaults: UserDefaults = .standard) {
         self.store = store
         self.defaults = defaults
+    }
+
+    deinit {
+        chainTimer?.invalidate()
     }
 
     /// One-line summary for the main window.
@@ -36,6 +46,7 @@ final class ReminderScheduler: ObservableObject {
         case .goalReached:
             return String(localized: "Goal reached — no more reminders today")
         case .scheduled(let date):
+            // Past or imminent → do not show a stale clock time.
             if date.timeIntervalSinceNow <= 5 {
                 return String(localized: "Reminding soon")
             }
@@ -48,6 +59,10 @@ final class ReminderScheduler: ObservableObject {
     ///   future fire date so merely looking at the UI does not delay the next reminder.
     /// - Parameter now: Injected for tests; defaults to the current time.
     func reschedule(force: Bool = false, now: Date = Date()) {
+        scheduleGeneration += 1
+        let generation = scheduleGeneration
+        cancelChainTimer()
+
         guard let store else {
             status = .disabled
             clearPersistedNextFire()
@@ -69,21 +84,30 @@ final class ReminderScheduler: ObservableObject {
         }
 
         // Soft refresh: keep the previously committed fire time if it is still valid.
+        let next: Date
         if !force,
            let preserved = preservedFireDate(now: now),
            isValidFireDate(preserved, settings: settings) {
-            commitSchedule(next: preserved, now: now, store: store, settings: settings)
-            return
+            next = preserved
+        } else {
+            next = nextFireDate(
+                from: now,
+                intervalMinutes: settings.reminderIntervalMinutes,
+                startHour: settings.activeStartHour,
+                startMinute: settings.activeStartMinute,
+                endHour: settings.activeEndHour,
+                endMinute: settings.activeEndMinute,
+                allowedWeekdays: settings.reminderWeekdaySet
+            )
         }
 
-        let next = nextFireDate(
-            from: now,
-            intervalMinutes: settings.reminderIntervalMinutes,
-            startHour: settings.activeStartHour,
-            endHour: settings.activeEndHour,
-            allowedWeekdays: settings.reminderWeekdaySet
+        commitSchedule(
+            next: next,
+            now: now,
+            store: store,
+            settings: settings,
+            generation: generation
         )
-        commitSchedule(next: next, now: now, store: store, settings: settings)
     }
 
     /// Public for unit testing.
@@ -91,40 +115,61 @@ final class ReminderScheduler: ObservableObject {
         from now: Date,
         intervalMinutes: Int,
         startHour: Int,
+        startMinute: Int = 0,
         endHour: Int,
+        endMinute: Int = 0,
         allowedWeekdays: Set<Int> = Set(1...7)
     ) -> Date {
         let interval = TimeInterval(max(intervalMinutes, 1) * 60)
         let allowed = allowedWeekdays.isEmpty ? Set(1...7) : allowedWeekdays
 
         let inWindow = now.isAllowedWeekday(allowed)
-            && now.isInActiveHours(startHour: startHour, endHour: endHour)
+            && now.isInActiveHours(
+                startHour: startHour,
+                startMinute: startMinute,
+                endHour: endHour,
+                endMinute: endMinute
+            )
 
         if inWindow {
             let candidate = now.addingTimeInterval(interval)
             if candidate.isAllowedWeekday(allowed),
-               candidate.isInActiveHours(startHour: startHour, endHour: endHour) {
+               candidate.isInActiveHours(
+                startHour: startHour,
+                startMinute: startMinute,
+                endHour: endHour,
+                endMinute: endMinute
+               ) {
                 return candidate
             }
             // Interval landed outside today's window or on a disallowed day.
             return candidate.nextReminderOpportunity(
                 startHour: startHour,
+                startMinute: startMinute,
                 endHour: endHour,
+                endMinute: endMinute,
                 allowedWeekdays: allowed
             )
         }
 
         return now.nextReminderOpportunity(
             startHour: startHour,
+            startMinute: startMinute,
             endHour: endHour,
+            endMinute: endMinute,
             allowedWeekdays: allowed
         )
     }
 
-    /// True when `date` is the start of an active window (hour == startHour, minute/second ≈ 0).
-    func isActiveWindowStart(_ date: Date, startHour: Int, calendar: Calendar = .current) -> Bool {
+    /// True when `date` is the start of an active window (matches start hour/minute, second ≈ 0).
+    func isActiveWindowStart(
+        _ date: Date,
+        startHour: Int,
+        startMinute: Int = 0,
+        calendar: Calendar = .current
+    ) -> Bool {
         calendar.component(.hour, from: date) == startHour
-            && calendar.component(.minute, from: date) == 0
+            && calendar.component(.minute, from: date) == startMinute
             && calendar.component(.second, from: date) == 0
     }
 
@@ -134,11 +179,15 @@ final class ReminderScheduler: ObservableObject {
             ? Set(AppSettings.allWeekdays)
             : settings.reminderWeekdaySet
         guard date.isAllowedWeekday(allowed) else { return false }
-        if date.isInActiveHours(startHour: settings.activeStartHour, endHour: settings.activeEndHour) {
+        if date.isInActiveHours(settings: settings) {
             return true
         }
         // Day-start pings sit exactly on the window open, which may be the boundary.
-        return isActiveWindowStart(date, startHour: settings.activeStartHour)
+        return isActiveWindowStart(
+            date,
+            startHour: settings.activeStartHour,
+            startMinute: settings.activeStartMinute
+        )
     }
 
     // MARK: - Formatting
@@ -162,51 +211,112 @@ final class ReminderScheduler: ObservableObject {
 
     // MARK: - Commit schedule
 
-    /// Cancels pending requests, optionally schedules a one-shot day-start catch-up,
-    /// then schedules `next` and updates `status` + persistence.
+    /// Updates status immediately, arms the chain timer, then schedules system notifications
+    /// asynchronously. Day-start “already notified” is only marked after a successful `add`.
     private func commitSchedule(
         next: Date,
         now: Date,
         store: IntakeStore,
-        settings: AppSettings
+        settings: AppSettings,
+        generation: Int
     ) {
         NotificationService.cancelAllReminders()
 
-        var earliest: Date?
-
-        // If we already entered today's active window and never sent the day-start
-        // ping (e.g. Mac slept through 09:00), catch up once (separate identifier).
-        if shouldCatchUpDayStart(now: now, settings: settings, store: store) {
-            let catchUp = now.addingTimeInterval(1)
-            if catchUp < next {
-                NotificationService.scheduleReminder(
-                    at: catchUp,
-                    kind: .dayStart(goalML: settings.dailyGoalML)
-                )
-                earliest = catchUp
+        var catchUp: Date?
+        let needsCatchUp = shouldCatchUpDayStart(now: now, settings: settings, store: store)
+        if needsCatchUp {
+            let candidate = now.addingTimeInterval(1)
+            if candidate < next {
+                catchUp = candidate
             }
+        }
+
+        let display = catchUp.map { min($0, next) } ?? next
+        status = .scheduled(display)
+        persistNextFire(next)
+        armChainTimer(for: display, generation: generation)
+
+        let isWindowStart = isActiveWindowStart(
+            next,
+            startHour: settings.activeStartHour,
+            startMinute: settings.activeStartMinute
+        )
+        let remaining = store.remainingML
+        let goal = settings.dailyGoalML
+        let markCatchUpDay = needsCatchUp && catchUp == nil
+        if markCatchUpDay {
+            // Next fire is soon enough that a separate catch-up is unnecessary.
             markDayStartNotified(for: now)
         }
 
-        if isActiveWindowStart(next, startHour: settings.activeStartHour) {
-            NotificationService.scheduleReminder(
-                at: next,
-                kind: .dayStart(goalML: settings.dailyGoalML)
-            )
-            markDayStartNotified(for: next)
-        } else {
-            NotificationService.scheduleReminder(
-                at: next,
-                kind: .interval(remainingML: store.remainingML)
-            )
-        }
+        Task { @MainActor in
+            if let catchUp {
+                let ok = await NotificationService.scheduleReminder(
+                    at: catchUp,
+                    kind: .dayStart(goalML: goal)
+                )
+                guard generation == self.scheduleGeneration else { return }
+                if ok {
+                    self.markDayStartNotified(for: now)
+                }
+            }
 
-        // UI shows the soonest pending ping (catch-up may be earlier).
-        // Soft-preserve anchors on the primary `next` slot so a day-start catch-up
-        // does not erase the interval fire when the catch-up is delivered.
-        let display = earliest.map { min($0, next) } ?? next
-        status = .scheduled(display)
-        persistNextFire(next)
+            guard generation == self.scheduleGeneration else { return }
+
+            let primaryOK: Bool
+            if isWindowStart {
+                primaryOK = await NotificationService.scheduleReminder(
+                    at: next,
+                    kind: .dayStart(goalML: goal)
+                )
+                if primaryOK {
+                    self.markDayStartNotified(for: next)
+                }
+            } else {
+                primaryOK = await NotificationService.scheduleReminder(
+                    at: next,
+                    kind: .interval(remainingML: remaining)
+                )
+            }
+
+            #if DEBUG
+            if !primaryOK {
+                print("Sip: primary reminder schedule failed; chain timer will retry")
+            }
+            #endif
+        }
+    }
+
+    // MARK: - Chain timer
+
+    private func armChainTimer(for date: Date, generation: Int) {
+        cancelChainTimer()
+        // Slightly after the fire so the banner can deliver first, then we plan the next.
+        let fireAt = date.addingTimeInterval(1.5)
+        let delay = fireAt.timeIntervalSinceNow
+        let timer: Timer
+        if delay <= 0 {
+            timer = Timer(timeInterval: 0.05, repeats: false) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, generation == self.scheduleGeneration else { return }
+                    self.reschedule(force: false)
+                }
+            }
+        } else {
+            timer = Timer(fire: fireAt, interval: 0, repeats: false) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, generation == self.scheduleGeneration else { return }
+                    self.reschedule(force: false)
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        chainTimer = timer
+    }
+
+    private func cancelChainTimer() {
+        chainTimer?.invalidate()
+        chainTimer = nil
     }
 
     private func preservedFireDate(now: Date) -> Date? {
@@ -235,12 +345,14 @@ final class ReminderScheduler: ObservableObject {
 
     // MARK: - Day-start catch-up
 
+    /// Exposed for unit tests (day-start catch-up gate).
+    func shouldCatchUpDayStartForTesting(now: Date, settings: AppSettings, store: IntakeStore) -> Bool {
+        shouldCatchUpDayStart(now: now, settings: settings, store: store)
+    }
+
     private func shouldCatchUpDayStart(now: Date, settings: AppSettings, store: IntakeStore) -> Bool {
         guard settings.allowsReminder(on: now) else { return false }
-        guard now.isInActiveHours(
-            startHour: settings.activeStartHour,
-            endHour: settings.activeEndHour
-        ) else { return false }
+        guard now.isInActiveHours(settings: settings) else { return false }
         guard !store.isGoalReached else { return false }
 
         let today = now.dayKey

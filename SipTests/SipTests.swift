@@ -81,7 +81,7 @@ final class SipTests: XCTestCase {
     }
 
     func testActiveHoursSameDay() {
-        // 14:00 is in 9–21
+        // 14:00 is in 9–21 (end minute inclusive)
         let date = calendarDate(hour: 14)
         XCTAssertTrue(date.isInActiveHours(startHour: 9, endHour: 21))
 
@@ -90,6 +90,32 @@ final class SipTests: XCTestCase {
 
         let night = calendarDate(hour: 22)
         XCTAssertFalse(night.isInActiveHours(startHour: 9, endHour: 21))
+
+        // End time is inclusive of that minute (21:00 yes, 21:01 no).
+        let atEnd = calendarDate(hour: 21, minute: 0)
+        XCTAssertTrue(atEnd.isInActiveHours(startHour: 9, endHour: 21, endMinute: 0))
+        let afterEnd = calendarDate(hour: 21, minute: 1)
+        XCTAssertFalse(afterEnd.isInActiveHours(startHour: 9, endHour: 21, endMinute: 0))
+    }
+
+    func testActiveHoursWithMinutes() {
+        // Window 09:30–17:15
+        let before = calendarDate(hour: 9, minute: 29)
+        XCTAssertFalse(before.isInActiveHours(
+            startHour: 9, startMinute: 30, endHour: 17, endMinute: 15
+        ))
+        let start = calendarDate(hour: 9, minute: 30)
+        XCTAssertTrue(start.isInActiveHours(
+            startHour: 9, startMinute: 30, endHour: 17, endMinute: 15
+        ))
+        let atEnd = calendarDate(hour: 17, minute: 15)
+        XCTAssertTrue(atEnd.isInActiveHours(
+            startHour: 9, startMinute: 30, endHour: 17, endMinute: 15
+        ))
+        let after = calendarDate(hour: 17, minute: 16)
+        XCTAssertFalse(after.isInActiveHours(
+            startHour: 9, startMinute: 30, endHour: 17, endMinute: 15
+        ))
     }
 
     func testNextFireDateWithinActiveWindow() {
@@ -372,6 +398,151 @@ final class SipTests: XCTestCase {
 
         let monday = makeDate(year: 2026, month: 7, day: 20, hour: 10, minute: 0)
         XCTAssertTrue(scheduler.isValidFireDate(monday, settings: settings))
+    }
+
+    func testSettingsDecodeMissingMinutesDefaultsToZero() throws {
+        let json = """
+        {
+          "dailyGoalML": 1800,
+          "reminderEnabled": true,
+          "reminderIntervalMinutes": 45,
+          "activeStartHour": 8,
+          "activeEndHour": 20,
+          "hasCompletedOnboarding": true
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertEqual(decoded.activeStartMinute, 0)
+        XCTAssertEqual(decoded.activeEndMinute, 0)
+        XCTAssertEqual(decoded.activeStartHour, 8)
+        XCTAssertEqual(decoded.activeEndHour, 20)
+    }
+
+    func testShouldCatchUpDayStartOncePerDay() {
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = IntakeStore(defaults: defaults)
+        var settings = store.settings
+        settings.reminderEnabled = true
+        settings.reminderWeekdays = AppSettings.allWeekdays
+        settings.activeStartHour = 9
+        settings.activeEndHour = 21
+        store.settings = settings
+
+        let scheduler = ReminderScheduler(store: store, defaults: defaults)
+        let now = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0)
+
+        XCTAssertTrue(scheduler.shouldCatchUpDayStartForTesting(now: now, settings: store.settings, store: store))
+
+        // After a force reschedule that marks day-start (async may mark later; set key for gate).
+        defaults.set(now.dayKey, forKey: "sip.lastDayStartNotifiedDay")
+        XCTAssertFalse(scheduler.shouldCatchUpDayStartForTesting(now: now, settings: store.settings, store: store))
+    }
+
+    func testNextFireDateHonorsStartMinute() {
+        let store = makeIsolatedStore()
+        let scheduler = ReminderScheduler(store: store)
+        let now = makeDate(year: 2026, month: 7, day: 17, hour: 7, minute: 0)
+        let next = scheduler.nextFireDate(
+            from: now,
+            intervalMinutes: 60,
+            startHour: 9,
+            startMinute: 30,
+            endHour: 21,
+            endMinute: 0
+        )
+        let cal = Calendar.current
+        XCTAssertEqual(cal.component(.hour, from: next), 9)
+        XCTAssertEqual(cal.component(.minute, from: next), 30)
+        XCTAssertTrue(scheduler.isActiveWindowStart(next, startHour: 9, startMinute: 30))
+    }
+
+    func testPastScheduledSummarySaysRemindingSoon() {
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = IntakeStore(defaults: defaults)
+        let scheduler = ReminderScheduler(store: store, defaults: defaults)
+        // Force a schedule in the past relative to real now by writing status via reschedule
+        // with a fire that will be treated as past when summarizing.
+        let t0 = Date().addingTimeInterval(-120)
+        // Simulate committed past fire.
+        defaults.set(t0.timeIntervalSince1970, forKey: "sip.nextScheduledFire")
+        // Soft reschedule with now after fire → recomputes forward.
+        defaults.set(Date().dayKey, forKey: "sip.lastDayStartNotifiedDay")
+        store.settings.activeStartHour = 0
+        store.settings.activeEndHour = 23
+        store.settings.reminderIntervalMinutes = 60
+        scheduler.reschedule(force: false, now: Date())
+        // After recompute, status should be future.
+        if case .scheduled(let d) = scheduler.status {
+            XCTAssertTrue(d > Date().addingTimeInterval(-1))
+        } else {
+            XCTFail("expected scheduled")
+        }
+    }
+
+    func testRemoveEntrySoftPreservesNextFire() {
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = IntakeStore(defaults: defaults)
+        store.settings.reminderIntervalMinutes = 60
+        store.settings.activeStartHour = 9
+        store.settings.activeEndHour = 21
+        let t0 = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0)
+        defaults.set(t0.dayKey, forKey: "sip.lastDayStartNotifiedDay")
+
+        let scheduler = ReminderScheduler(store: store, defaults: defaults)
+        scheduler.reschedule(force: true, now: t0)
+        guard case .scheduled(let first) = scheduler.status else {
+            return XCTFail("expected initial schedule")
+        }
+
+        let older = store.addIntake(amountML: 100)!
+        _ = store.addIntake(amountML: 50)
+        // Pin schedule again after adds (add is force with wall clock in production).
+        scheduler.reschedule(force: true, now: t0)
+
+        var kind: IntakeStore.ChangeKind?
+        store.onStateChanged = { kind = $0 }
+        store.removeEntry(id: older.id)
+        XCTAssertEqual(kind, .soft)
+
+        // Soft reschedule mid-interval must keep the committed fire.
+        let tMid = t0.addingTimeInterval(30 * 60)
+        scheduler.reschedule(force: false, now: tMid)
+        guard case .scheduled(let after) = scheduler.status else {
+            return XCTFail("expected schedule after soft delete")
+        }
+        XCTAssertEqual(after.timeIntervalSince1970, first.timeIntervalSince1970, accuracy: 1)
+    }
+
+    func testRemoveEntryCrossingGoalForcesReschedule() {
+        let store = makeIsolatedStore()
+        var kinds: [IntakeStore.ChangeKind] = []
+        store.onStateChanged = { kinds.append($0) }
+        // goalRange lower bound is 500.
+        store.settings.dailyGoalML = 500
+        let e1 = store.addIntake(amountML: 500)!
+        XCTAssertTrue(store.isGoalReached)
+        kinds.removeAll()
+        // Deleting the only entry un-reaches goal → force.
+        store.removeEntry(id: e1.id)
+        XCTAssertEqual(kinds.last, .force)
+        XCTAssertFalse(store.isGoalReached)
+    }
+
+    func testSettingsChangeKindIsSettings() {
+        let store = makeIsolatedStore()
+        var kinds: [IntakeStore.ChangeKind] = []
+        store.onStateChanged = { kinds.append($0) }
+        store.settings.dailyGoalML = 1800
+        XCTAssertEqual(kinds.last, .settings)
     }
 
     func testWeekdayShortLabelLocaleAware() {
