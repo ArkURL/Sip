@@ -73,11 +73,11 @@ final class IntakeStore: ObservableObject {
 
     var statusText: String {
         if totalML == 0 {
-            return "还没开始记"
+            return String(localized: "Not started yet")
         } else if isGoalReached {
-            return "达标了 🎉"
+            return String(localized: "Goal reached 🎉")
         } else {
-            return "还差 \(remainingML.mlDisplay)"
+            return String(localized: "Still \(remainingML) ml to go")
         }
     }
 

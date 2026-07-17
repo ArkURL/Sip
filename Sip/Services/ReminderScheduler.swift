@@ -29,14 +29,14 @@ final class ReminderScheduler: ObservableObject {
     var nextReminderSummary: String {
         switch status {
         case .disabled:
-            return "提醒已关"
+            return String(localized: "Reminders off")
         case .goalReached:
-            return "达标了，今天不再提醒"
+            return String(localized: "Goal reached — no more reminders today")
         case .scheduled(let date):
             if date.timeIntervalSinceNow <= 5 {
-                return "马上提醒"
+                return String(localized: "Reminding soon")
             }
-            return "下次 \(Self.formatNext(date))"
+            return String(localized: "Next \(Self.formatNext(date))")
         }
     }
 
@@ -152,18 +152,18 @@ final class ReminderScheduler: ObservableObject {
 
     static func formatNext(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
         let time = DateFormatter()
-        time.locale = Locale(identifier: "zh_CN")
-        time.dateFormat = "HH:mm"
+        time.locale = .autoupdatingCurrent
+        time.setLocalizedDateFormatFromTemplate("HHmm")
 
         if calendar.isDateInToday(date) {
             return time.string(from: date)
         }
         if calendar.isDateInTomorrow(date) {
-            return "明天 \(time.string(from: date))"
+            return String(localized: "Tomorrow \(time.string(from: date))")
         }
         let dayAndTime = DateFormatter()
-        dayAndTime.locale = Locale(identifier: "zh_CN")
-        dayAndTime.dateFormat = "M月d日 HH:mm"
+        dayAndTime.locale = .autoupdatingCurrent
+        dayAndTime.setLocalizedDateFormatFromTemplate("MMMd HHmm")
         return dayAndTime.string(from: date)
     }
 

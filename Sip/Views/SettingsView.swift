@@ -18,10 +18,10 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             if showsDismissButton {
                 HStack {
-                    Text("设置")
+                    Text("Settings")
                         .font(.headline)
                     Spacer()
-                    Button("完成") {
+                    Button("Done") {
                         dismiss()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -32,9 +32,9 @@ struct SettingsView: View {
             }
 
             Form {
-                Section("每日目标") {
+                Section("Daily goal") {
                     HStack {
-                        Text("目标水量")
+                        Text("Target volume")
                         Spacer()
                         Text("\(store.settings.dailyGoalML) ml")
                             .foregroundStyle(.secondary)
@@ -56,28 +56,28 @@ struct SettingsView: View {
                         in: AppSettings.goalRange,
                         step: 50
                     ) {
-                        Text("精细调节")
+                        Text("Fine adjust")
                     }
                 }
 
-                Section("提醒") {
-                    Toggle("开启提醒", isOn: Binding(
+                Section("Reminders") {
+                    Toggle("Enable reminders", isOn: Binding(
                         get: { store.settings.reminderEnabled },
                         set: { store.settings.reminderEnabled = $0 }
                     ))
 
-                    Picker("提醒间隔", selection: Binding(
+                    Picker("Interval", selection: Binding(
                         get: { store.settings.reminderIntervalMinutes },
                         set: { store.settings.reminderIntervalMinutes = $0 }
                     )) {
                         ForEach(AppSettings.intervalOptions, id: \.self) { minutes in
-                            Text("\(minutes) 分钟").tag(minutes)
+                            Text(String(localized: "\(minutes) min")).tag(minutes)
                         }
                     }
                     .disabled(!store.settings.reminderEnabled)
 
                     DatePicker(
-                        "开始时间",
+                        "Start time",
                         selection: $startTime,
                         displayedComponents: .hourAndMinute
                     )
@@ -87,7 +87,7 @@ struct SettingsView: View {
                     }
 
                     DatePicker(
-                        "结束时间",
+                        "End time",
                         selection: $endTime,
                         displayedComponents: .hourAndMinute
                     )
@@ -97,7 +97,7 @@ struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("提醒日期")
+                        Text("Reminder days")
                             .foregroundStyle(store.settings.reminderEnabled ? Color.primary : Color.secondary)
 
                         HStack(spacing: 6) {
@@ -109,14 +109,14 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 4)
 
-                    Text("仅在选中的日期、活跃时段内，且未达标时发送提醒。")
+                    Text("Only on selected days, during active hours, and before you hit the goal.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Section("关于") {
-                    LabeledContent("应用", value: "Sip")
-                    LabeledContent("版本", value: "1.0 MVP")
+                Section("About") {
+                    LabeledContent("App", value: "Sip")
+                    LabeledContent("Version", value: Self.appVersionString)
                 }
             }
             .formStyle(.grouped)
@@ -133,7 +133,7 @@ struct SettingsView: View {
     // MARK: - Weekday controls
 
     private func weekdayToggle(_ weekday: Int) -> some View {
-        let label = AppSettings.weekdayShortLabels[weekday - 1]
+        let label = AppSettings.weekdayShortLabel(for: weekday)
         let isOn = store.settings.reminderWeekdaySet.contains(weekday)
 
         return Button {
@@ -157,7 +157,7 @@ struct SettingsView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(isOn ? "已启用，点击关闭" : "已关闭，点击启用")
+        .help(isOn ? String(localized: "Enabled — click to turn off") : String(localized: "Off — click to enable"))
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
@@ -178,6 +178,15 @@ struct SettingsView: View {
         components.hour = hour
         components.minute = 0
         return Calendar.current.date(from: components) ?? Date()
+    }
+
+    private static var appVersionString: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        if let build, !build.isEmpty {
+            return "\(short) (\(build))"
+        }
+        return short
     }
 }
 

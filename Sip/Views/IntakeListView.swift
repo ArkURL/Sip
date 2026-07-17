@@ -15,18 +15,19 @@ struct IntakeListView: View {
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm"
+        f.locale = .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("HHmm")
         return f
     }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("今日记录")
+                Text("Today's log")
                     .font(.headline)
                 Spacer()
                 // Reserve space so the header height does not jump when undo appears.
-                Button("撤销最近") {
+                Button("Undo recent") {
                     onUndoLast()
                 }
                 .buttonStyle(.plain)
@@ -56,10 +57,10 @@ struct IntakeListView: View {
             Image(systemName: "cup.and.saucer")
                 .font(.title2)
                 .foregroundStyle(.tertiary)
-            Text("还没有记录")
+            Text("No entries yet")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text("点上方按钮开始记录吧")
+            Text("Tap above to start logging")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -73,7 +74,7 @@ struct IntakeListView: View {
                     Text(Self.timeFormatter.string(from: entry.timestamp))
                         .font(.body.monospacedDigit())
                         .foregroundStyle(.secondary)
-                        .frame(width: 48, alignment: .leading)
+                        .frame(width: 52, alignment: .leading)
 
                     Text("+\(entry.amountML) ml")
                         .font(.body.weight(.medium))
@@ -83,7 +84,7 @@ struct IntakeListView: View {
                 .padding(.vertical, 2)
                 .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                 .contextMenu {
-                    Button("删除", role: .destructive) {
+                    Button("Delete", role: .destructive) {
                         onDelete(entry.id)
                     }
                 }

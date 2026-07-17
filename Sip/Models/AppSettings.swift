@@ -34,8 +34,12 @@ struct AppSettings: Equatable {
     static let weekendDays = [1, 7]
     static let allWeekdays = Array(1...7)
 
-    /// Short labels aligned with `Calendar` weekday 1…7 (周日…周六).
-    static let weekdayShortLabels = ["日", "一", "二", "三", "四", "五", "六"]
+    /// Short weekday labels for Calendar weekday 1…7 (locale-aware).
+    static func weekdayShortLabel(for weekday: Int, calendar: Calendar = .current) -> String {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        guard weekday >= 1, weekday <= symbols.count else { return "?" }
+        return symbols[weekday - 1]
+    }
 
     var reminderWeekdaySet: Set<Int> {
         Set(reminderWeekdays)

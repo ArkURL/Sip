@@ -46,9 +46,9 @@ struct ContentView: View {
                 Button {
                     showSettings = true
                 } label: {
-                    Label("设置", systemImage: "gearshape")
+                    Label("Settings", systemImage: "gearshape")
                 }
-                .help("设置")
+                .help("Settings")
             }
         }
         .sheet(isPresented: $showSettings) {

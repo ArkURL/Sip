@@ -82,7 +82,7 @@ struct SipApp: App {
 
     private var menuBarText: String {
         if store.isGoalReached {
-            return "完成"
+            return String(localized: "Done")
         }
         return "\(store.progressPercent)%"
     }
@@ -274,33 +274,33 @@ private struct MenuBarMenuView: View {
 
         Divider()
 
-        Button("记录 +250 ml") {
+        Button(String(localized: "Log +250 ml")) {
             store.addIntake(amountML: 250)
         }
 
-        Button("记录 +100 ml") {
+        Button(String(localized: "Log +100 ml")) {
             store.addIntake(amountML: 100)
         }
 
         if !store.entries.isEmpty {
-            Button("撤销最近一次") {
+            Button(String(localized: "Undo last")) {
                 store.undoLast()
             }
         }
 
         Divider()
 
-        Button("打开 Sip") {
+        Button(String(localized: "Open Sip")) {
             openMainWindow()
         }
 
         SettingsLink {
-            Text("设置…")
+            Text("Settings…")
         }
 
         Divider()
 
-        Button("退出 Sip") {
+        Button(String(localized: "Quit Sip")) {
             NSApplication.shared.terminate(nil)
         }
     }

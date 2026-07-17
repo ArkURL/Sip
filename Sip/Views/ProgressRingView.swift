@@ -11,7 +11,7 @@ struct ProgressRingView: View {
     let goalML: Int
     let isGoalReached: Bool
     let statusText: String
-    /// e.g. "下次提醒 14:30" / "提醒已关闭" — nil hides the row.
+    /// e.g. "Next 14:30" / "Reminders off" — nil hides the row.
     var nextReminderText: String? = nil
 
     private var ringProgress: CGFloat {
@@ -87,8 +87,8 @@ struct ProgressRingView: View {
         totalML: 1250,
         goalML: 2000,
         isGoalReached: false,
-        statusText: "还需 750 ml",
-        nextReminderText: "下次提醒 14:30"
+        statusText: "Still 750 ml to go",
+        nextReminderText: "Next 14:30"
     )
     .padding()
     .frame(width: 360)

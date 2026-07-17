@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-17 — i18n + 版本 1.1 + README
+
+- 新增 `Sip/Localizable.xcstrings`（源语言 en + zh-Hans）；`project.pbxproj` knownRegions 加入 zh-Hans。  
+- UI / 通知 / 状态 / 菜单栏文案改为 `Text("…")` / `String(localized:)`；日期与星期随系统 locale。  
+- **版本**：`MARKETING_VERSION` 1.0 → **1.1**，`CURRENT_PROJECT_VERSION` 1 → **2**；设置页从 Bundle 读版本。  
+- README / README_en 同步 1.1 功能与语言说明。  
+- **文件**：`Localizable.xcstrings`（新）, 各 View/Service, `AppSettings.swift`, `project.pbxproj`, README*, `.agent/*`, `SipTests`  
+- **提交**：本条一并 commit  
+
 ## 2026-07-17 — 修复 DMG 背景与拖拽安装布局
 
 - **问题**：`release.yml` 把背景指到卷内 `.github:dmg_background.png`，但未拷入卷，背景失效。  

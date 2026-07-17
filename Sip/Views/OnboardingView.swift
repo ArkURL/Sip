@@ -19,10 +19,10 @@ struct OnboardingView: View {
                 .foregroundStyle(.cyan)
                 .padding(.top, 12)
 
-            Text("欢迎使用 Sip")
+            Text("Welcome to Sip")
                 .font(.title.weight(.semibold))
 
-            Text("设定每日目标，轻松记录喝水，到点温柔提醒。")
+            Text("Set a daily goal, log sips easily, and get gentle reminders.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -30,7 +30,7 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("每日目标")
+                    Text("Daily goal")
                         .font(.headline)
                     Spacer()
                     Text("\(Int(goal)) ml")
@@ -51,7 +51,7 @@ struct OnboardingView: View {
             Button {
                 Task { await finish() }
             } label: {
-                Text("开始使用")
+                Text("Get started")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -65,7 +65,9 @@ struct OnboardingView: View {
     private func finish() async {
         store.settings.dailyGoalML = Int(goal)
         let granted = await NotificationService.requestAuthorization()
-        permissionNote = granted ? nil : "未开启通知时仍可手动记录，稍后可在系统设置中允许通知。"
+        permissionNote = granted
+            ? nil
+            : String(localized: "You can still log without notifications. Allow them later in System Settings.")
         store.completeOnboarding()
         // Brief pause so user can see the note if denied; always finish.
         if !granted {

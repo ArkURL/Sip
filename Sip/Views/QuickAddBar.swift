@@ -14,7 +14,7 @@ struct QuickAddBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("记录喝水")
+            Text("Log water")
                 .font(.headline)
 
             LazyVGrid(
@@ -37,7 +37,7 @@ struct QuickAddBar: View {
                 Button {
                     showCustom = true
                 } label: {
-                    Text("自定义")
+                    Text("Custom")
                         .font(.callout.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
@@ -61,7 +61,7 @@ private struct CustomAmountSheet: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("自定义水量")
+            Text("Custom amount")
                 .font(.headline)
 
             Stepper(value: $amount, in: 50...2000, step: 50) {
@@ -71,10 +71,10 @@ private struct CustomAmountSheet: View {
             }
 
             HStack {
-                Button("取消") { dismiss() }
+                Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("添加") {
+                Button("Add") {
                     onConfirm(amount)
                 }
                 .buttonStyle(.borderedProminent)

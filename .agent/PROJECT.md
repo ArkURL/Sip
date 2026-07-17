@@ -1,6 +1,6 @@
 # Sip — Agent 项目手册
 
-> 最后更新：2026-07-17（关闭窗口隐藏 Dock / 菜单栏保活）  
+> 最后更新：2026-07-17（i18n en / zh-Hans）  
 > 仓库：https://github.com/ArkURL/Sip  
 > Bundle ID：`com.liao.Sip`  
 > 平台：macOS 14.6+ · SwiftUI · Xcode（PBXFileSystemSynchronizedRootGroup，Sip/ 下文件自动入工程）
@@ -39,7 +39,7 @@
 - Apple Health
 - Widget / Siri / 复杂音效
 - 饮品类型（茶/咖啡等）
-- 完整多语言（UI 文案以 **中文** 为主）
+- 应用内语言切换（跟随系统语言：`en` / `zh-Hans`）
 
 ---
 
@@ -50,6 +50,7 @@
 | UI | SwiftUI + 少量 AppKit（窗口前置、菜单栏） |
 | 通知 | `UserNotifications` |
 | 存储 | `UserDefaults` + `Codable` JSON（无 Core Data / SwiftData） |
+| 本地化 | `Localizable.xcstrings`（源语言 **en**，另有 **zh-Hans**）；跟随系统语言 |
 | 测试 | `SipTests`（IntakeStore / 调度 / 持久化） |
 | 签名 | Automatic Signing；打包需在 Xcode 选 Team |
 | 部署 | `MACOSX_DEPLOYMENT_TARGET = 14.6` |
@@ -82,6 +83,7 @@ Sip/
 │   │   └── OnboardingView.swift
 │   ├── Utilities/
 │   │   └── Date+Day.swift
+│   ├── Localizable.xcstrings     ← en（源）+ zh-Hans
 │   ├── Assets.xcassets/
 │   │   └── AppIcon.appiconset/   ← mac_*_1x/2x.png
 │   └── Sip.entitlements          ← App Sandbox 开启
@@ -92,6 +94,15 @@ Sip/
 ```
 
 本地可能存在 `.venv-icon/`（生成图标用，已 gitignore），**不要提交**。
+
+### 3.1 本地化约定
+
+- **String Catalog**：`Sip/Localizable.xcstrings`；`developmentRegion = en`；`knownRegions` 含 `zh-Hans`。  
+- UI 用 `Text("English key")`；代码用 `String(localized: "English key")` / 插值 `String(localized: "Still \(n) ml to go")`。  
+- 日期：`DateFormatter` + `setLocalizedDateFormatFromTemplate` + `.autoupdatingCurrent`。  
+- 星期短标签：`AppSettings.weekdayShortLabel(for:)` ← `Calendar.veryShortStandaloneWeekdaySymbols`。  
+- **不**做应用内语言切换；跟随系统（系统偏好设置 → 语言与地区）。  
+- 新增文案：先写英文 key，再在 catalog 补 `zh-Hans`。
 
 ---
 
