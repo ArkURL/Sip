@@ -20,21 +20,48 @@ jobs:
 
       - name: Build
         run: |
+          set -euo pipefail
+          # Ad-hoc sign in-process. Never use CODE_SIGNING_ALLOWED=NO — an unbound
+          # Info.plist / missing entitlements breaks UNUserNotificationCenter + TCC
+          # (Settings shows Not set even after the user allows notifications).
           xcodebuild build \
             -scheme Sip \
             -configuration Release \
             -derivedDataPath build \
+            -destination 'generic/platform=macOS' \
             CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=YES
 
-      - name: Locate .app
+      - name: Locate .app and ad-hoc sign
         id: app
         run: |
+          set -euo pipefail
           APP_PATH=$(find build -name "Sip.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
             echo "Sip.app not found"
             exit 1
           fi
+
+          # Re-sign with sandbox entitlements so the release binary matches Xcode Run.
+          codesign --force --deep --sign - \
+            --entitlements Sip/Sip.entitlements \
+            --identifier com.liao.Sip \
+            "$APP_PATH"
+
+          echo "=== codesign -dv ==="
+          codesign -dv --verbose=2 "$APP_PATH" 2>&1
+          echo "=== entitlements ==="
+          codesign -d --entitlements :- "$APP_PATH" 2>&1
+
+          INFO_LINE=$(codesign -dv --verbose=2 "$APP_PATH" 2>&1 | grep "Info.plist" || true)
+          echo "Info.plist line: $INFO_LINE"
+          if echo "$INFO_LINE" | grep -qi "not bound"; then
+            echo "ERROR: Info.plist not bound — notification permission will break on macOS"
+            exit 1
+          fi
+          codesign --verify --verbose=4 "$APP_PATH"
+
           echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Create DMG
@@ -47,6 +74,7 @@ jobs:
           # Window content size must match `.github/dmg_background.png` (660×400).
           # bounds = {left, top, right, bottom} → width 660, height 400
           BG_SRC="${GITHUB_WORKSPACE}/.github/dmg_background.png"
+          ENTITLEMENTS="${GITHUB_WORKSPACE}/Sip/Sip.entitlements"
 
           if [ ! -f "$BG_SRC" ]; then
             echo "Missing DMG background: $BG_SRC"
@@ -78,8 +106,15 @@ jobs:
           }
           trap cleanup EXIT
 
-          # App + Applications symlink (classic drag-to-install)
-          cp -R "$APP_PATH" "$MOUNT_DIR/Sip.app"
+          # ditto preserves bundle metadata better than cp -R; re-sign after copy
+          # because volume copy can invalidate the code signature seal.
+          ditto "$APP_PATH" "$MOUNT_DIR/Sip.app"
+          codesign --force --deep --sign - \
+            --entitlements "$ENTITLEMENTS" \
+            --identifier com.liao.Sip \
+            "$MOUNT_DIR/Sip.app"
+          codesign --verify --verbose=2 "$MOUNT_DIR/Sip.app"
+
           ln -s /Applications "$MOUNT_DIR/Applications"
 
           # Background must live ON the volume (HFS path `.background:background.png`).
@@ -159,6 +194,10 @@ jobs:
                xattr -cr /Applications/Sip.app
                ```
             4. 如果提示通知权限，点击「允许」
+            5. 若从旧版 DMG 升级：先退出 Sip，删除 `/Applications/Sip.app` 再拖入新版本；通知权限异常时可执行：
+               ```bash
+               tccutil reset All com.liao.Sip
+               ```
 
             ### Install
 
@@ -169,3 +208,7 @@ jobs:
                xattr -cr /Applications/Sip.app
                ```
             4. Allow notifications when prompted
+            5. Upgrading from an older DMG: quit Sip, delete `/Applications/Sip.app`, then install. If notifications look stuck:
+               ```bash
+               tccutil reset All com.liao.Sip
+               ```

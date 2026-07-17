@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-17 — Release 1.1.7：修复 DMG 未正确签名导致通知权限失效
+
+- **问题**：Release DMG 安装后点「允许通知」，设置页一直「未设置」；Xcode Run 正常。  
+- **根因**：CI 使用 `CODE_SIGNING_ALLOWED=NO`，产物 `Info.plist=not bound`、无 entitlements、无 Sealed Resources；macOS TCC/`UNUserNotificationCenter` 无法正确绑定权限。  
+- **修复**：Release 启用 ad-hoc 签名 + 写入 `Sip.entitlements`；DMG 用 `ditto` 拷贝后重签；CI 校验 Info.plist 已 bound。  
+- **版本**：1.1.6 → **1.1.7**，build 8 → **9**。  
+- **文件**：`.github/workflows/release.yml`, `project.pbxproj`, README*  
+- **提交 / tag**：`v1.1.7`  
+
 ## 2026-07-17 — Release 1.1.6：允许通知后设置状态立即更新
 
 - **问题**：新安装点「允许通知」后，系统已授权但设置页仍显示「未设置」。  
