@@ -48,15 +48,15 @@ enum NotificationService {
         switch kind {
         case .dayStart(let goalML):
             identifier = dayStartIdentifier
-            content.title = "今日喝水提醒开始 💧"
-            content.body = "新的一天目标 \(goalML) ml，从现在开始保持补水节奏吧。"
+            content.title = "今天也记得喝水 💧"
+            content.body = "目标 \(goalML) ml，有空就喝两口。"
         case .interval(let remainingML):
             identifier = reminderIdentifier
-            content.title = "该喝水啦 💧"
+            content.title = "该喝水了 💧"
             if remainingML > 0 {
-                content.body = "今日还有 \(remainingML) ml 就达标了，起来喝一口吧。"
+                content.body = "还差 \(remainingML) ml，去接杯水吧。"
             } else {
-                content.body = "记得补充水分，保持好状态。"
+                content.body = "站起来喝一口水，活动一下。"
             }
         }
 

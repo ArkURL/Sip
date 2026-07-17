@@ -69,10 +69,14 @@ struct SipApp: App {
 
     @ViewBuilder
     private var menuBarLabel: some View {
+        // Plain HStack — MenuBarExtra reliably renders SF Symbols this way
+        // (Text+Image concatenation can drop the icon in the status item).
         HStack(spacing: 4) {
             Image(systemName: store.isGoalReached ? "checkmark.circle.fill" : "drop.fill")
             Text(menuBarText)
                 .monospacedDigit()
+                // Nudge digits down a bit so they sit closer to the icon center.
+                .offset(y: 1)
         }
     }
 

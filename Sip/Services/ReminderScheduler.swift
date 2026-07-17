@@ -29,14 +29,14 @@ final class ReminderScheduler: ObservableObject {
     var nextReminderSummary: String {
         switch status {
         case .disabled:
-            return "提醒已关闭"
+            return "提醒已关"
         case .goalReached:
-            return "今日已达标，提醒已暂停"
+            return "达标了，今天不再提醒"
         case .scheduled(let date):
             if date.timeIntervalSinceNow <= 5 {
-                return "即将提醒"
+                return "马上提醒"
             }
-            return "下次提醒 \(Self.formatNext(date))"
+            return "下次 \(Self.formatNext(date))"
         }
     }
 
