@@ -4,7 +4,7 @@
 
 一款轻量 macOS 喝水提醒工具。
 
-**当前版本：1.1.5**
+**当前版本：1.1.6**
 
 ## 功能
 
@@ -57,8 +57,8 @@ xcodebuild -scheme Sip -destination 'platform=macOS,arch=arm64' build
 打 tag 发布（触发 GitHub Actions 打包 DMG）：
 
 ```bash
-git tag v1.1.5
-git push origin v1.1.5
+git tag v1.1.6
+git push origin v1.1.6
 ```
 
 ## 技术栈

@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-17 — Release 1.1.6：允许通知后设置状态立即更新
+
+- **问题**：新安装点「允许通知」后，系统已授权但设置页仍显示「未设置」。  
+- **原因**：依赖二次 `getNotificationSettings` 刷新，macOS 授权回调后状态可能滞后；Settings 仅用 EnvironmentObject 时 UI 不刷新。  
+- **修复**：`requestFromUser()` 授权成功即乐观设为 Allowed；短轮询确认；Settings/Onboarding 显式 `@ObservedObject` 注入；completion-handler 请求权限。  
+- **版本**：1.1.5 → **1.1.6**，build 7 → **8**。  
+- **文件**：`NotificationService.swift`, `SettingsView.swift`, `OnboardingView.swift`, `SipApp.swift`, `ContentView.swift`, README*  
+- **验证**：SipTests 32 passed  
+- **提交 / tag**：`v1.1.6`  
+
 ## 2026-07-17 — Release 1.1.5：修复通知权限状态一直显示「未设置」
 
 - **问题**：系统设置里已允许通知，App 设置页仍显示「未设置」。  

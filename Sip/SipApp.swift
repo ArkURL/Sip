@@ -34,10 +34,12 @@ struct SipApp: App {
                     session.refreshDayAndReminders()
                 }
                 .sheet(isPresented: $showOnboarding) {
-                    OnboardingView(store: store) {
+                    OnboardingView(
+                        store: store,
+                        notificationPermission: session.notificationPermission
+                    ) {
                         showOnboarding = false
                         session.scheduler.reschedule(force: true)
-                        Task { await session.notificationPermission.refresh() }
                     }
                     .interactiveDismissDisabled()
                 }
@@ -58,13 +60,15 @@ struct SipApp: App {
         }
 
         Settings {
-            SettingsView(store: store)
-                .environmentObject(session.notificationPermission)
-                .onAppear {
-                    // Settings is also a real window; keep Dock while it is open.
-                    DockPolicy.showInDock()
-                    Task { await session.notificationPermission.refresh() }
-                }
+            SettingsView(
+                store: store,
+                notificationPermission: session.notificationPermission
+            )
+            .onAppear {
+                // Settings is also a real window; keep Dock while it is open.
+                DockPolicy.showInDock()
+                Task { await session.notificationPermission.refresh() }
+            }
         }
     }
 

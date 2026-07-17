@@ -8,10 +8,11 @@ import UserNotifications
 
 struct SettingsView: View {
     @ObservedObject var store: IntakeStore
+    /// Injected explicitly (not only via EnvironmentObject) so Settings scene updates reliably.
+    @ObservedObject var notificationPermission: NotificationPermissionModel
     /// When presented as a sheet from the main window, show an explicit dismiss control.
     var showsDismissButton: Bool = false
 
-    @EnvironmentObject private var notificationPermission: NotificationPermissionModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var startTime: Date = SettingsView.date(hour: 9, minute: 0)
@@ -158,17 +159,20 @@ struct SettingsView: View {
     @ViewBuilder
     private var notificationPermissionRow: some View {
         // Keep rows flat for macOS Form hit-testing; nested VStack + Button can swallow clicks.
+        // Read `@Published` fields directly in the view body for observation.
+        let status = notificationPermission.status
+        let revision = notificationPermission.revision
+
         HStack {
             Text("Notifications")
             Spacer()
-            Text(notificationPermission.statusLabel)
+            Text(NotificationPermissionModel.statusLabel(for: status))
                 .foregroundStyle(.secondary)
                 .font(.callout)
-                // Force Text identity to follow status so Form rows do not keep a stale label.
-                .id(notificationPermission.status.rawValue)
+                .id("notif-status-\(status.rawValue)-\(revision)")
         }
 
-        switch notificationPermission.status {
+        switch status {
         case .denied:
             Text("Notifications are off in System Settings, so reminders will not appear.")
                 .font(.caption)
@@ -180,7 +184,10 @@ struct SettingsView: View {
             Button("Allow Notifications…") {
                 Task { await allowNotificationsTapped() }
             }
-        default:
+            .id("notif-allow-\(revision)")
+        case .authorized, .provisional, .ephemeral:
+            EmptyView()
+        @unknown default:
             EmptyView()
         }
     }
@@ -188,8 +195,7 @@ struct SettingsView: View {
     @MainActor
     private func allowNotificationsTapped() async {
         let previous = notificationPermission.status
-        let granted = await NotificationService.requestAuthorization()
-        await notificationPermission.refresh()
+        let granted = await notificationPermission.requestFromUser()
 
         if granted {
             // Permission may have been missing when earlier schedules were attempted.
@@ -283,6 +289,9 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(store: IntakeStore(), showsDismissButton: true)
-        .environmentObject(NotificationPermissionModel())
+    SettingsView(
+        store: IntakeStore(),
+        notificationPermission: NotificationPermissionModel(),
+        showsDismissButton: true
+    )
 }

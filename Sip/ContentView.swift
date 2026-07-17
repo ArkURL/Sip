@@ -53,8 +53,11 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(store: store, showsDismissButton: true)
-                .environmentObject(notificationPermission)
+            SettingsView(
+                store: store,
+                notificationPermission: notificationPermission,
+                showsDismissButton: true
+            )
         }
         .onAppear {
             // Soft only — opening the main window must not delay an already-scheduled reminder.

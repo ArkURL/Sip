@@ -7,6 +7,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @ObservedObject var store: IntakeStore
+    @ObservedObject var notificationPermission: NotificationPermissionModel
     let onFinish: () -> Void
 
     @State private var goal: Double = 2000
@@ -65,7 +66,8 @@ struct OnboardingView: View {
 
     private func finish() async {
         store.settings.dailyGoalML = Int(goal)
-        let granted = await NotificationService.requestAuthorization()
+        // Updates session-scoped model so Settings immediately shows Allowed/Denied.
+        let granted = await notificationPermission.requestFromUser()
         permissionNote = granted
             ? nil
             : String(localized: "You can still log without notifications. Allow them later in System Settings.")
@@ -79,5 +81,9 @@ struct OnboardingView: View {
 }
 
 #Preview {
-    OnboardingView(store: IntakeStore(), onFinish: {})
+    OnboardingView(
+        store: IntakeStore(),
+        notificationPermission: NotificationPermissionModel(),
+        onFinish: {}
+    )
 }

@@ -8,11 +8,16 @@ import AppKit
 import Combine
 import UserNotifications
 
-/// Long-lived mirror of `UNUserNotificationCenter` auth so Settings UI does not
-/// get stuck on the `@State` default (`.notDetermined`) when the view tree is rebuilt.
+/// Long-lived mirror of `UNUserNotificationCenter` authorization.
+///
+/// Owned by `AppSession` and injected as `@ObservedObject` (not only EnvironmentObject)
+/// so the Settings window reliably re-renders when status changes.
 @MainActor
 final class NotificationPermissionModel: ObservableObject {
+    /// Source of truth for UI. Prefer reading this in `body`, not only helpers.
     @Published private(set) var status: UNAuthorizationStatus = .notDetermined
+    /// Bumps on every update so SwiftUI Form rows cannot keep a stale identity.
+    @Published private(set) var revision: UInt = 0
 
     var isAllowed: Bool {
         switch status {
@@ -25,7 +30,7 @@ final class NotificationPermissionModel: ObservableObject {
         }
     }
 
-    var statusLabel: String {
+    static func statusLabel(for status: UNAuthorizationStatus) -> String {
         switch status {
         case .authorized, .provisional, .ephemeral:
             return String(localized: "Allowed")
@@ -38,16 +43,58 @@ final class NotificationPermissionModel: ObservableObject {
         }
     }
 
+    var statusLabel: String { Self.statusLabel(for: status) }
+
     func refresh() async {
         let latest = await NotificationService.authorizationStatus()
-        #if DEBUG
-        if latest != status {
-            print("Sip: notification auth \(status.rawValue) → \(latest.rawValue)")
+        apply(latest)
+    }
+
+    /// Request permission and update UI immediately from the grant result.
+    /// macOS can lag `getNotificationSettings` behind the request callback; optimistic
+    /// update prevents Settings from staying on "Not set" after the user allows.
+    @discardableResult
+    func requestFromUser() async -> Bool {
+        let granted = await NotificationService.requestAuthorization()
+        await applyRequestResult(granted: granted)
+        return granted
+    }
+
+    func applyRequestResult(granted: Bool) async {
+        if granted {
+            // Optimistic — do not wait for a second system round-trip to flip the label.
+            apply(.authorized)
         }
-        #endif
-        // Always assign so first refresh after launch publishes even when still notDetermined
-        // is rare; more importantly, authorized/denied always replace the default.
-        status = latest
+
+        // Confirm / correct from the system (with a short poll; settings can lag).
+        for attempt in 0..<8 {
+            let latest = await NotificationService.authorizationStatus()
+            #if DEBUG
+            print("Sip: notification auth poll #\(attempt) → \(latest.rawValue) granted=\(granted)")
+            #endif
+            switch latest {
+            case .authorized, .provisional, .ephemeral, .denied:
+                apply(latest)
+                return
+            case .notDetermined:
+                if granted {
+                    // Keep optimistic `.authorized` while the daemon catches up.
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    continue
+                }
+                apply(.notDetermined)
+                return
+            @unknown default:
+                apply(latest)
+                return
+            }
+        }
+    }
+
+    private func apply(_ newStatus: UNAuthorizationStatus) {
+        // Always publish a revision so observers refresh even if raw status matched.
+        status = newStatus
+        revision &+= 1
     }
 }
 
@@ -85,13 +132,18 @@ enum NotificationService {
             break
         }
 
-        do {
-            return try await center.requestAuthorization(options: [.alert, .sound, .badge])
-        } catch {
-            #if DEBUG
-            print("Sip: requestAuthorization failed: \(error.localizedDescription)")
-            #endif
-            return false
+        // Prefer completion-handler API — the async variant has been flaky for
+        // menu-bar / accessory apps on some macOS builds.
+        return await withCheckedContinuation { continuation in
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                #if DEBUG
+                if let error {
+                    print("Sip: requestAuthorization error: \(error.localizedDescription)")
+                }
+                print("Sip: requestAuthorization granted=\(granted)")
+                #endif
+                continuation.resume(returning: granted)
+            }
         }
     }
 
