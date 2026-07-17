@@ -4,7 +4,7 @@
 
 A lightweight macOS water drinking reminder.
 
-**Current version: 1.1**
+**Current version: 1.1.1**
 
 ## Features
 
@@ -57,8 +57,8 @@ xcodebuild -scheme Sip -destination 'platform=macOS,arch=arm64' build
 Tag a release (triggers GitHub Actions DMG build):
 
 ```bash
-git tag v1.1
-git push origin v1.1
+git tag v1.1.1
+git push origin v1.1.1
 ```
 
 ## Tech Stack

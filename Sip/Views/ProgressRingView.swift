@@ -18,30 +18,53 @@ struct ProgressRingView: View {
         CGFloat(min(max(progress, 0), 1))
     }
 
+    private var accent: Color {
+        isGoalReached ? SipTheme.success : SipTheme.accent
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             ZStack {
+                // Soft disc behind the ring — light “water” pool
                 Circle()
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 14)
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                accent.opacity(isGoalReached ? 0.14 : 0.10),
+                                accent.opacity(0.02),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 92
+                        )
+                    )
+                    .frame(width: 188, height: 188)
+
+                Circle()
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 14)
 
                 Circle()
                     .trim(from: 0, to: ringProgress)
                     .stroke(
-                        isGoalReached ? Color.green : Color.cyan,
+                        isGoalReached ? SipTheme.successRingGradient : SipTheme.ringGradient,
                         style: StrokeStyle(lineWidth: 14, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
+                    .shadow(color: accent.opacity(0.28), radius: 4, y: 1)
                     .animation(.easeInOut(duration: 0.35), value: ringProgress)
 
                 VStack(spacing: 4) {
                     if isGoalReached {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 28))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(SipTheme.success)
+                            .symbolRenderingMode(.hierarchical)
                     } else {
                         Image(systemName: "drop.fill")
                             .font(.system(size: 22))
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(SipTheme.accent)
+                            .symbolRenderingMode(.hierarchical)
                     }
 
                     Text("\(totalML)")
@@ -59,12 +82,12 @@ struct ProgressRingView: View {
             VStack(spacing: 6) {
                 Text(statusText)
                     .font(.callout)
-                    .foregroundStyle(isGoalReached ? Color.green : Color.secondary)
+                    .foregroundStyle(isGoalReached ? SipTheme.success : Color.secondary)
                     .multilineTextAlignment(.center)
 
                 if let nextReminderText {
                     HStack(spacing: 4) {
-                        Image(systemName: "bell")
+                        Image(systemName: "bell.fill")
                             .font(.caption2)
                         Text(nextReminderText)
                             .font(.caption)

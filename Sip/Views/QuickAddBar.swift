@@ -17,32 +17,34 @@ struct QuickAddBar: View {
             Text("Log water")
                 .font(.headline)
 
+            // ~3 columns in the fixed 380pt window → wider, taller hit targets.
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 64), spacing: 8)],
-                spacing: 8
+                columns: [GridItem(.adaptive(minimum: 100), spacing: 10)],
+                spacing: 10
             ) {
                 ForEach(amounts, id: \.self) { amount in
                     Button {
                         onAdd(amount)
                     } label: {
                         Text("+\(amount)")
-                            .font(.callout.weight(.medium))
+                            .font(.body.weight(.semibold).monospacedDigit())
                             .frame(maxWidth: .infinity)
+                            .frame(minHeight: 36)
+                            .padding(.vertical, 6)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .tint(amount == 250 ? .cyan : nil)
+                    .buttonStyle(SipAmountButtonStyle())
                 }
 
                 Button {
                     showCustom = true
                 } label: {
                     Text("Custom")
-                        .font(.callout.weight(.medium))
+                        .font(.body.weight(.medium))
                         .frame(maxWidth: .infinity)
+                        .frame(minHeight: 36)
+                        .padding(.vertical, 6)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                .buttonStyle(SipAmountButtonStyle())
             }
         }
         .sheet(isPresented: $showCustom) {
@@ -51,6 +53,20 @@ struct QuickAddBar: View {
                 showCustom = false
             }
         }
+    }
+}
+
+/// Soft filled chips — same look for fixed amounts and Custom.
+private struct SipAmountButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(SipTheme.accentDeep)
+            .background(
+                SipTheme.accent.opacity(configuration.isPressed ? 0.18 : 0.12)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -78,7 +94,7 @@ private struct CustomAmountSheet: View {
                     onConfirm(amount)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.cyan)
+                .tint(SipTheme.accent)
                 .keyboardShortcut(.defaultAction)
             }
         }

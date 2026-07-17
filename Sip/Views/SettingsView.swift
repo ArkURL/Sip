@@ -145,13 +145,13 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isOn ? Color.cyan : Color.primary.opacity(0.06))
+                    RoundedRectangle(cornerRadius: SipTheme.chipRadius, style: .continuous)
+                        .fill(isOn ? SipTheme.accent : Color.primary.opacity(0.06))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: SipTheme.chipRadius, style: .continuous)
                         .strokeBorder(
-                            isOn ? Color.cyan.opacity(0.9) : Color.primary.opacity(0.12),
+                            isOn ? SipTheme.accent.opacity(0.9) : Color.primary.opacity(0.12),
                             lineWidth: isOn ? 0 : 1
                         )
                 )

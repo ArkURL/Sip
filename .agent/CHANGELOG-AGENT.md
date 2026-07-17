@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-17 — UI 轻 polish → 1.1.1
+
+- 新增 `SipTheme`（accent / 渐变 / 圆角）。  
+- 进度环：径向淡底 + angular 渐变描边 + 轻阴影；达标色统一为水感绿。  
+- 快捷记水：更大 chip、统一软填充（无 250 高亮；Custom 同色）；按下微缩。  
+- 列表：左侧 cyan 条、ml 强调色、空态改 `drop`、面板细描边。  
+- 引导/设置 chip 同步 theme 色。  
+- **版本**：1.1 → **1.1.1**，build 2 → **3**。  
+- **文件**：`SipTheme.swift`（新）, Views, `project.pbxproj`, README*  
+- **提交 / tag**：`v1.1.1`  
+
 ## 2026-07-17 — i18n + 版本 1.1 + README
 
 - 新增 `Sip/Localizable.xcstrings`（源语言 en + zh-Hans）；`project.pbxproj` knownRegions 加入 zh-Hans。  

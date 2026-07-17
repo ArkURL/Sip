@@ -16,7 +16,8 @@ struct OnboardingView: View {
         VStack(spacing: 24) {
             Image(systemName: "drop.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(SipTheme.accent)
+                .symbolRenderingMode(.hierarchical)
                 .padding(.top, 12)
 
             Text("Welcome to Sip")
@@ -38,7 +39,7 @@ struct OnboardingView: View {
                         .monospacedDigit()
                 }
                 Slider(value: $goal, in: 500...5000, step: 50)
-                    .tint(.cyan)
+                    .tint(SipTheme.accent)
             }
             .padding(.horizontal, 8)
 
@@ -55,7 +56,7 @@ struct OnboardingView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.cyan)
+            .tint(SipTheme.accent)
             .controlSize(.large)
         }
         .padding(28)
