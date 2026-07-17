@@ -34,7 +34,7 @@ struct SipApp: App {
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView(store: store) {
                         showOnboarding = false
-                        session.scheduler.reschedule()
+                        session.scheduler.reschedule(force: true)
                     }
                     .interactiveDismissDisabled()
                 }
@@ -106,7 +106,8 @@ final class AppSession: ObservableObject {
         let scheduler = ReminderScheduler(store: store)
         self.scheduler = scheduler
         store.onStateChanged = { [weak scheduler] in
-            scheduler?.reschedule()
+            // Intake / settings / day roll must recompute from now.
+            scheduler?.reschedule(force: true)
         }
         // Forward store + scheduler updates so MenuBarExtra / main UI re-render.
         storeObservation = store.objectWillChange.sink { [weak self] _ in
@@ -122,7 +123,7 @@ final class AppSession: ObservableObject {
         let scheduler = ReminderScheduler(store: store)
         self.scheduler = scheduler
         store.onStateChanged = { [weak scheduler] in
-            scheduler?.reschedule()
+            scheduler?.reschedule(force: true)
         }
         storeObservation = store.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
@@ -147,8 +148,11 @@ final class AppSession: ObservableObject {
     }
 
     func refreshDayAndReminders() {
+        // Day roll triggers onStateChanged → force reschedule. Same-day ticks
+        // (become active / open window / wake) only soft-refresh so the next
+        // reminder is not pushed later just because the UI appeared.
         store.ensureCurrentDay()
-        scheduler.reschedule()
+        scheduler.reschedule(force: false)
     }
 }
 

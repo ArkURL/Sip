@@ -55,12 +55,13 @@ struct ContentView: View {
             SettingsView(store: store, showsDismissButton: true)
         }
         .onAppear {
+            // Soft only — opening the main window must not delay an already-scheduled reminder.
             store.ensureCurrentDay()
-            scheduler.reschedule()
+            scheduler.reschedule(force: false)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.ensureCurrentDay()
-            scheduler.reschedule()
+            scheduler.reschedule(force: false)
         }
     }
 }

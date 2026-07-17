@@ -112,7 +112,7 @@ Sip/
 ┌─────────────────────────────────────────────────────────┐
 │  SipApp                                                  │
 │  · @StateObject IntakeStore                              │
-│  · ReminderScheduler（onStateChanged → reschedule）      │
+│  · ReminderScheduler（onStateChanged → reschedule force） │
 │  · Window("Sip", id: "main")  ← 单例主窗口               │
 │  · MenuBarExtra → MenuBarMenuView                        │
 │  · Settings { SettingsView }                             │
@@ -162,7 +162,11 @@ Sip/
 - 达标或关闭提醒 → 取消待发通知  
 - 否则安排 **下一次** 本地通知（非排全天）  
 - 活跃时段外 / 非选中星期 → `nextReminderOpportunity` 跳到下一允许日的时段起点  
-- `nextFireDate(..., allowedWeekdays:)` 对单测开放
+- `nextFireDate(..., allowedWeekdays:)` 对单测开放  
+- **`reschedule(force:)`**（易错）：  
+  - `force: true` — 记水 / 改设置 / 跨日 / 引导完成 → 从 `now` 重算间隔  
+  - `force: false` — 开主窗 / becomeActive / 生命周期 tick → **保留**已提交的未来 fire（`sip.nextScheduledFire`），避免「打开界面就把提醒往后推」  
+  - 到期后 soft 刷新因 fire 已过期会自动排下一轮
 
 ### 4.2 日切策略
 

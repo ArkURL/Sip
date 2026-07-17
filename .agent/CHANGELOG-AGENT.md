@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-17 — 修复打开主界面推迟下次提醒 → 1.1.2
+
+- **问题**：关主窗口后未记水，再从菜单栏打开 Sip 时，下次提醒被重算为「打开时刻 + 间隔」，把原定时间往后推。  
+- **原因**：`reschedule()` 一律 `cancel + now + interval`；`ContentView.onAppear` / `didBecomeActive` / `refreshDayAndReminders` 都会触发。  
+- **修复**：  
+  - `reschedule(force:)` — `force: true` 在记水 / 改设置 / 跨日 / 引导完成后从 now 重算；  
+  - `force: false`（开窗、前台、生命周期 tick）保留已提交的未来 fire（`sip.nextScheduledFire` + 校验活跃时段/星期）。  
+  - 通知真正到期后 soft 刷新会因 fire 已过期而排下一轮。  
+- **版本**：1.1.1 → **1.1.2**，build 3 → **4**。  
+- **文件**：`ReminderScheduler.swift`, `SipApp.swift`, `ContentView.swift`, `SipTests.swift`, `project.pbxproj`, README*  
+- **验证**：SipTests 24 passed  
+- **提交 / tag**：`v1.1.2`  
+
 ## 2026-07-17 — UI 轻 polish → 1.1.1
 
 - 新增 `SipTheme`（accent / 渐变 / 圆角）。  

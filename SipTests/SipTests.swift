@@ -253,13 +253,125 @@ final class SipTests: XCTestCase {
     }
 
     func testRescheduleStatusGoalReached() {
-        let store = makeIsolatedStore()
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = IntakeStore(defaults: defaults)
         store.settings.dailyGoalML = 500
         store.addIntake(amountML: 500)
-        let scheduler = ReminderScheduler(store: store)
-        scheduler.reschedule()
+        let scheduler = ReminderScheduler(store: store, defaults: defaults)
+        scheduler.reschedule(force: true)
         XCTAssertEqual(scheduler.status, .goalReached)
         XCTAssertFalse(scheduler.nextReminderSummary.isEmpty)
+    }
+
+    func testSoftRescheduleDoesNotPushNextFireLater() {
+        // Reopening the main UI must not recompute from "now" and delay the reminder.
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = IntakeStore(defaults: defaults)
+        store.settings.reminderEnabled = true
+        store.settings.reminderIntervalMinutes = 60
+        store.settings.activeStartHour = 9
+        store.settings.activeEndHour = 21
+        store.settings.reminderWeekdays = AppSettings.allWeekdays
+
+        let scheduler = ReminderScheduler(store: store, defaults: defaults)
+        let t0 = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0)
+        // Avoid day-start catch-up for the simulated calendar day.
+        defaults.set(t0.dayKey, forKey: "sip.lastDayStartNotifiedDay")
+        scheduler.reschedule(force: true, now: t0)
+
+        guard case .scheduled(let first) = scheduler.status else {
+            return XCTFail("expected scheduled after force reschedule")
+        }
+        let expected = t0.addingTimeInterval(60 * 60)
+        XCTAssertEqual(first.timeIntervalSince1970, expected.timeIntervalSince1970, accuracy: 1)
+
+        // 30 minutes later — soft refresh (open window / become active).
+        let t1 = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 30)
+        scheduler.reschedule(force: false, now: t1)
+
+        guard case .scheduled(let soft) = scheduler.status else {
+            return XCTFail("expected still scheduled after soft reschedule")
+        }
+        XCTAssertEqual(soft.timeIntervalSince1970, first.timeIntervalSince1970, accuracy: 1)
+        // Must NOT have been pushed to t1 + 60m.
+        XCTAssertNotEqual(
+            soft.timeIntervalSince1970,
+            t1.addingTimeInterval(60 * 60).timeIntervalSince1970,
+            accuracy: 1
+        )
+    }
+
+    func testForceRescheduleRecomputesFromNow() {
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = IntakeStore(defaults: defaults)
+        store.settings.reminderIntervalMinutes = 60
+        store.settings.activeStartHour = 9
+        store.settings.activeEndHour = 21
+
+        let scheduler = ReminderScheduler(store: store, defaults: defaults)
+        let t0 = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0)
+        defaults.set(t0.dayKey, forKey: "sip.lastDayStartNotifiedDay")
+        scheduler.reschedule(force: true, now: t0)
+
+        let t1 = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 30)
+        scheduler.reschedule(force: true, now: t1)
+
+        guard case .scheduled(let forced) = scheduler.status else {
+            return XCTFail("expected scheduled after force reschedule")
+        }
+        let expected = t1.addingTimeInterval(60 * 60)
+        XCTAssertEqual(forced.timeIntervalSince1970, expected.timeIntervalSince1970, accuracy: 1)
+    }
+
+    func testSoftRescheduleAfterFireRecomputesNextInterval() {
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = IntakeStore(defaults: defaults)
+        store.settings.reminderIntervalMinutes = 60
+        store.settings.activeStartHour = 9
+        store.settings.activeEndHour = 21
+        defaults.set(makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0).dayKey,
+                     forKey: "sip.lastDayStartNotifiedDay")
+
+        let scheduler = ReminderScheduler(store: store, defaults: defaults)
+        let t0 = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0)
+        scheduler.reschedule(force: true, now: t0)
+
+        // Fire time has passed → soft refresh should schedule a new interval from now.
+        let afterFire = makeDate(year: 2026, month: 7, day: 17, hour: 11, minute: 0, second: 5)
+        scheduler.reschedule(force: false, now: afterFire)
+
+        guard case .scheduled(let next) = scheduler.status else {
+            return XCTFail("expected rescheduled after fire")
+        }
+        let expected = afterFire.addingTimeInterval(60 * 60)
+        XCTAssertEqual(next.timeIntervalSince1970, expected.timeIntervalSince1970, accuracy: 1)
+    }
+
+    func testIsValidFireDateRejectsDisallowedWeekday() {
+        let store = makeIsolatedStore()
+        let scheduler = ReminderScheduler(store: store)
+        var settings = AppSettings.default
+        settings.reminderWeekdays = AppSettings.workweekDays
+        settings.activeStartHour = 9
+        settings.activeEndHour = 21
+
+        let saturday = makeDate(year: 2026, month: 7, day: 18, hour: 10, minute: 0)
+        XCTAssertFalse(scheduler.isValidFireDate(saturday, settings: settings))
+
+        let monday = makeDate(year: 2026, month: 7, day: 20, hour: 10, minute: 0)
+        XCTAssertTrue(scheduler.isValidFireDate(monday, settings: settings))
     }
 
     func testWeekdayShortLabelLocaleAware() {
@@ -284,13 +396,14 @@ final class SipTests: XCTestCase {
         makeDate(year: 2026, month: 7, day: 15, hour: hour, minute: minute)
     }
 
-    private func makeDate(year: Int, month: Int, day: Int, hour: Int, minute: Int) -> Date {
+    private func makeDate(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int = 0) -> Date {
         var components = DateComponents()
         components.year = year
         components.month = month
         components.day = day
         components.hour = hour
         components.minute = minute
+        components.second = second
         return Calendar.current.date(from: components)!
     }
 }
