@@ -4,14 +4,15 @@
 
 ---
 
-## 2026-07-17 — 修复通知权限状态一直显示「未设置」
+## 2026-07-17 — Release 1.1.5：修复通知权限状态一直显示「未设置」
 
 - **问题**：系统设置里已允许通知，App 设置页仍显示「未设置」。  
 - **原因**：权限状态放在 `SettingsView` 的 `@State` 默认值 `.notDetermined`；App/store 刷新重建视图时状态回落且刷新不可靠；async `notificationSettings` 在部分路径不稳。  
 - **修复**：`NotificationPermissionModel` 挂到 `AppSession`；`getNotificationSettings` completion API；打开设置 / 回前台 / `.task` 刷新。  
-- **文件**：`NotificationService.swift`, `SipApp.swift`, `SettingsView.swift`, `ContentView.swift`  
+- **版本**：1.1.4 → **1.1.5**，build 6 → **7**。  
+- **文件**：`NotificationService.swift`, `SipApp.swift`, `SettingsView.swift`, `ContentView.swift`, `project.pbxproj`, README*  
 - **验证**：SipTests 32 passed  
-- **提交**：本条一并 commit  
+- **提交 / tag**：`v1.1.5`  
 
 ## 2026-07-17 — Release 1.1.4：修复设置页「允许通知」无响应
 
