@@ -1,6 +1,6 @@
 # Sip — Agent 项目手册
 
-> 最后更新：2026-07-16（按星期提醒 / 布局稳定 / 设置 UI）  
+> 最后更新：2026-07-17（关闭窗口隐藏 Dock / 菜单栏保活）  
 > 仓库：https://github.com/ArkURL/Sip  
 > Bundle ID：`com.liao.Sip`  
 > 平台：macOS 14.6+ · SwiftUI · Xcode（PBXFileSystemSynchronizedRootGroup，Sip/ 下文件自动入工程）
@@ -155,8 +155,11 @@ Sip/
 
 ### 4.2 日切策略
 
-- 启动 / `didBecomeActive` / 写操作前调用 `ensureCurrentDay()`  
-- 不跑后台跨日服务；MVP 够用  
+- `ensureCurrentDay()`：对比 `sip.lastActiveDay` 与今日 `dayKey`，跨日清空 entries。  
+- 触发点：启动 / `didBecomeActive` / 写操作前 / **`DayLifecycleMonitor`**（日历日变、系统唤醒、午夜 Timer）/ 本地通知 willPresent·点击。  
+- 关主窗口后菜单栏模式往往不会 `didBecomeActive`，因此 **不能只依赖 active**。  
+- 开日通知：`sip.water.dayStart`（活跃时段起点，或睡过起点后补一次）；间隔通知：`sip.water.reminder`。  
+- 去重键：`sip.lastDayStartNotifiedDay`。 
 
 ### 4.3 双入口设置
 
@@ -187,9 +190,13 @@ Sip/
 - 打开窗口相关逻辑放在 **独立 View**（`MenuBarMenuView`），才能用 `@Environment(\.openWindow)`。  
 - 勿再依赖 fragile 的 `showSettingsWindow:` 作为主路径。
 
-### 5.3 应用生命周期
+### 5.3 应用生命周期与 Dock
 
-- 关主窗口后 App 仍可因 **MenuBarExtra** 存活。  
+- 关主窗口后 App 仍可因 **MenuBarExtra** 存活（`applicationShouldTerminateAfterLastWindowClosed` → `false`）。  
+- **Dock 策略**（`DockPolicy` + `AppDelegate`）：  
+  - 有用户窗口（主窗口 / 设置窗，含最小化）→ `setActivationPolicy(.regular)`，Dock 有图标。  
+  - 关闭最后一个用户窗口 → `.accessory`，**从 Dock 消失**，仅保留菜单栏。  
+  - 菜单「打开 Sip」会先 `showInDock()` 再 `activate` / `openWindow`（accessory → regular 顺序重要）。  
 - 退出：菜单「退出 Sip」→ `NSApp.terminate`。
 
 ---

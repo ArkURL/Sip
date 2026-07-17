@@ -11,6 +11,8 @@ struct ProgressRingView: View {
     let goalML: Int
     let isGoalReached: Bool
     let statusText: String
+    /// e.g. "下次提醒 14:30" / "提醒已关闭" — nil hides the row.
+    var nextReminderText: String? = nil
 
     private var ringProgress: CGFloat {
         CGFloat(min(max(progress, 0), 1))
@@ -54,10 +56,26 @@ struct ProgressRingView: View {
             .frame(width: 180, height: 180)
             .padding(.top, 8)
 
-            Text(statusText)
-                .font(.callout)
-                .foregroundStyle(isGoalReached ? Color.green : Color.secondary)
-                .multilineTextAlignment(.center)
+            VStack(spacing: 6) {
+                Text(statusText)
+                    .font(.callout)
+                    .foregroundStyle(isGoalReached ? Color.green : Color.secondary)
+                    .multilineTextAlignment(.center)
+
+                if let nextReminderText {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bell")
+                            .font(.caption2)
+                        Text(nextReminderText)
+                            .font(.caption)
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel(nextReminderText)
+                }
+            }
+            // Keep status + next-reminder block height stable when text swaps.
+            .frame(minHeight: 40, alignment: .top)
         }
         .frame(maxWidth: .infinity)
     }
@@ -69,7 +87,8 @@ struct ProgressRingView: View {
         totalML: 1250,
         goalML: 2000,
         isGoalReached: false,
-        statusText: "还需 750 ml"
+        statusText: "还需 750 ml",
+        nextReminderText: "下次提醒 14:30"
     )
     .padding()
     .frame(width: 360)

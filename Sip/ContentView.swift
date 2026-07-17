@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var store: IntakeStore
+    @EnvironmentObject private var scheduler: ReminderScheduler
     @State private var showSettings = false
 
     /// Fixed window content size — avoids reflow/clip when the list goes from empty → entries.
@@ -14,13 +15,14 @@ struct ContentView: View {
     private static let contentHeight: CGFloat = 560
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             ProgressRingView(
                 progress: store.progress,
                 totalML: store.totalML,
                 goalML: store.settings.dailyGoalML,
                 isGoalReached: store.isGoalReached,
-                statusText: store.statusText
+                statusText: store.statusText,
+                nextReminderText: scheduler.nextReminderSummary
             )
 
             QuickAddBar(amounts: AppSettings.quickAmounts) { amount in
@@ -54,14 +56,20 @@ struct ContentView: View {
         }
         .onAppear {
             store.ensureCurrentDay()
+            scheduler.reschedule()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.ensureCurrentDay()
+            scheduler.reschedule()
         }
     }
 }
 
 #Preview {
-    ContentView()
-        .environmentObject(IntakeStore())
+    let store = IntakeStore()
+    let scheduler = ReminderScheduler(store: store)
+    scheduler.reschedule()
+    return ContentView()
+        .environmentObject(store)
+        .environmentObject(scheduler)
 }

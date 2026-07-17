@@ -118,15 +118,18 @@ final class IntakeStore: ObservableObject {
         onStateChanged?()
     }
 
-    func ensureCurrentDay() {
+    /// Clears yesterday’s intake when the local calendar day changes.
+    /// - Returns: `true` if the day rolled over and state was reset.
+    @discardableResult
+    func ensureCurrentDay() -> Bool {
         let today = Date().dayKey
-        if lastActiveDay != today {
-            entries = []
-            lastActiveDay = today
-            defaults.set(today, forKey: dayKeyStorage)
-            persistEntries()
-            onStateChanged?()
-        }
+        guard lastActiveDay != today else { return false }
+        entries = []
+        lastActiveDay = today
+        defaults.set(today, forKey: dayKeyStorage)
+        persistEntries()
+        onStateChanged?()
+        return true
     }
 
     func completeOnboarding() {

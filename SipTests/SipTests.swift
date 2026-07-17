@@ -184,6 +184,82 @@ final class SipTests: XCTestCase {
         XCTAssertEqual(store2.entries.count, 1)
     }
 
+    func testEnsureCurrentDayNoopSameDay() {
+        let store = makeIsolatedStore()
+        store.addIntake(amountML: 200)
+        XCTAssertFalse(store.ensureCurrentDay())
+        XCTAssertEqual(store.totalML, 200)
+    }
+
+    func testEnsureCurrentDayRollsWhenLastActiveDayIsYesterday() {
+        let suiteName = "SipTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        defaults.set(yesterday.dayKey, forKey: "sip.lastActiveDay")
+        let entry = IntakeEntry(amountML: 500, timestamp: yesterday)
+        defaults.set(try! JSONEncoder().encode([entry]), forKey: "sip.todayEntries")
+
+        let store = IntakeStore(defaults: defaults)
+        // init already calls ensureCurrentDay → should have wiped yesterday.
+        XCTAssertEqual(store.totalML, 0)
+        XCTAssertEqual(store.entries.count, 0)
+        XCTAssertFalse(store.ensureCurrentDay())
+    }
+
+    func testIsActiveWindowStartDetection() {
+        let store = makeIsolatedStore()
+        let scheduler = ReminderScheduler(store: store)
+        let atNine = makeDate(year: 2026, month: 7, day: 17, hour: 9, minute: 0)
+        XCTAssertTrue(scheduler.isActiveWindowStart(atNine, startHour: 9))
+
+        let atNineOhOne = makeDate(year: 2026, month: 7, day: 17, hour: 9, minute: 1)
+        XCTAssertFalse(scheduler.isActiveWindowStart(atNineOhOne, startHour: 9))
+
+        let atTen = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0)
+        XCTAssertFalse(scheduler.isActiveWindowStart(atTen, startHour: 9))
+    }
+
+    func testNextFireDateOutsideWindowIsWindowStart() {
+        let store = makeIsolatedStore()
+        let scheduler = ReminderScheduler(store: store)
+        let now = calendarDate(hour: 7, minute: 30)
+        let next = scheduler.nextFireDate(
+            from: now,
+            intervalMinutes: 60,
+            startHour: 9,
+            endHour: 21
+        )
+        XCTAssertTrue(scheduler.isActiveWindowStart(next, startHour: 9))
+        XCTAssertTrue(next > now)
+    }
+
+    func testFormatNextReminderTodayAndTomorrow() {
+        let today = makeDate(year: 2026, month: 7, day: 17, hour: 14, minute: 30)
+        let now = makeDate(year: 2026, month: 7, day: 17, hour: 10, minute: 0)
+        XCTAssertEqual(
+            ReminderScheduler.formatNext(today, now: now),
+            "14:30"
+        )
+
+        let tomorrow = makeDate(year: 2026, month: 7, day: 18, hour: 9, minute: 0)
+        XCTAssertEqual(
+            ReminderScheduler.formatNext(tomorrow, now: now),
+            "明天 09:00"
+        )
+    }
+
+    func testRescheduleStatusGoalReached() {
+        let store = makeIsolatedStore()
+        store.settings.dailyGoalML = 500
+        store.addIntake(amountML: 500)
+        let scheduler = ReminderScheduler(store: store)
+        scheduler.reschedule()
+        XCTAssertEqual(scheduler.status, .goalReached)
+        XCTAssertTrue(scheduler.nextReminderSummary.contains("达标"))
+    }
+
     // MARK: - Helpers
 
     private func makeIsolatedStore() -> IntakeStore {

@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-07-17 — 主界面显示下次提醒时间
+
+- 进度环下方增加次要文案：`下次提醒 HH:mm` / `明天 HH:mm` / `提醒已关闭` / `今日已达标…` / `即将提醒`。  
+- `ReminderScheduler` 变为 `ObservableObject`，`status` 在 `reschedule()` 时更新；`AppSession.scheduler` 启动即创建并注入 `ContentView`。  
+- **文件**：`ReminderScheduler.swift`, `ProgressRingView.swift`, `ContentView.swift`, `SipApp.swift`, `SipTests.swift`  
+- **提交**：未提交  
+
+## 2026-07-17 — 跨日自动刷新进度 + 开日提醒通知
+
+- **问题**：关窗后菜单栏保活时，睡眠跨日/次日唤醒不会走 `didBecomeActive`，进度仍显示昨天。  
+- **日切监听**（`DayLifecycleMonitor`）：`NSCalendarDayChanged`、`NSWorkspace.didWakeNotification`、本地午夜 Timer；通知展示/点击也会触发刷新。  
+- **开日通知**：到达活跃时段起点（或睡过起点后补发一次）推送「今日喝水提醒开始」；之后仍按间隔提醒。  
+- **结构**：`AppSession` 持有 store/scheduler/monitor，转发 `objectWillChange` 保证菜单栏百分比更新。  
+- **文件**：`DayLifecycleMonitor.swift`（新）, `ReminderScheduler.swift`, `NotificationService.swift`, `IntakeStore.swift`, `SipApp.swift`, `SipTests.swift`  
+- **验证**：BUILD SUCCEEDED；SipTests 17 passed  
+- **提交**：未提交  
+
+## 2026-07-17 — 关闭窗口后隐藏 Dock 图标
+
+- **行为**：关闭主窗口/设置窗后切换 `NSApp` 激活策略为 `.accessory`，Dock 不再占位；进程由 `MenuBarExtra` 保活。再打开窗口时切回 `.regular`。  
+- **实现**：`DockPolicy` + `AppDelegate`（监听 `willClose` / `didBecomeKey`；`applicationShouldTerminateAfterLastWindowClosed` = false）。打开主窗口前先 `showInDock()`。  
+- **文件**：`Sip/SipApp.swift`，`.agent/PROJECT.md`，本日志  
+- **提交**：未提交  
+
 ## 2026-07-16 — 按星期提醒 + 主界面布局稳定 + 设置 UI 打磨
 
 - **按周几提醒**：`AppSettings.reminderWeekdays`（Calendar weekday 1=日…7=六）；设置里七天切换（选中：青色实心底+白字）；调度跳过未选中日。旧设置 JSON 无该字段时默认可每天提醒。  
