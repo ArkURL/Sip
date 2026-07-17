@@ -148,34 +148,27 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var notificationPermissionRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Notifications")
-                Spacer()
-                Text(notificationStatusLabel)
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-            }
+        // Keep rows flat for macOS Form hit-testing; nested VStack + Button can swallow clicks.
+        HStack {
+            Text("Notifications")
+            Spacer()
+            Text(notificationStatusLabel)
+                .foregroundStyle(.secondary)
+                .font(.callout)
+        }
 
-            if notificationStatus == .denied {
-                Text("Notifications are off in System Settings, so reminders will not appear.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Open System Settings…") {
-                    NotificationService.openSystemNotificationSettings()
-                }
-                .disabled(!store.settings.reminderEnabled)
-            } else if notificationStatus == .notDetermined {
-                Button("Allow Notifications…") {
-                    Task {
-                        _ = await NotificationService.requestAuthorization()
-                        await refreshNotificationStatus()
-                    }
-                }
-                .disabled(!store.settings.reminderEnabled)
+        if notificationStatus == .denied {
+            Text("Notifications are off in System Settings, so reminders will not appear.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Open System Settings…") {
+                NotificationService.openSystemNotificationSettings()
+            }
+        } else if notificationStatus == .notDetermined {
+            Button("Allow Notifications…") {
+                Task { await allowNotificationsTapped() }
             }
         }
-        .padding(.vertical, 2)
     }
 
     private var notificationStatusLabel: String {
@@ -191,6 +184,27 @@ struct SettingsView: View {
         }
     }
 
+    @MainActor
+    private func allowNotificationsTapped() async {
+        let previous = notificationStatus
+        let granted = await NotificationService.requestAuthorization()
+        await refreshNotificationStatus()
+
+        if granted {
+            // Permission may have been missing when earlier schedules were attempted.
+            store.refreshRemindersAfterPermissionChange()
+            return
+        }
+
+        // If the system alert never appeared, status stays `.notDetermined` — open
+        // Settings so the click always has a visible result. Do not bounce the user
+        // into Settings immediately after they explicitly tapped Don't Allow.
+        if notificationStatus == .notDetermined || previous == .denied {
+            NotificationService.openSystemNotificationSettings()
+        }
+    }
+
+    @MainActor
     private func refreshNotificationStatus() async {
         notificationStatus = await NotificationService.authorizationStatus()
     }

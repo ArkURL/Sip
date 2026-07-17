@@ -18,11 +18,35 @@ enum NotificationService {
         case interval(remainingML: Int)
     }
 
+    /// Prompts for notification permission when still `.notDetermined`.
+    ///
+    /// Menu-bar-first apps often sit in `.accessory` activation policy; without bringing the
+    /// app to the foreground first, macOS may silently skip the permission alert — the button
+    /// appears to do nothing. Always activate before requesting.
+    @MainActor
+    @discardableResult
     static func requestAuthorization() async -> Bool {
+        prepareForSystemPermissionUI()
+
+        let center = UNUserNotificationCenter.current()
+        let current = await center.notificationSettings().authorizationStatus
+        switch current {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .denied:
+            return false
+        case .notDetermined:
+            break
+        @unknown default:
+            break
+        }
+
         do {
-            return try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .sound, .badge])
+            return try await center.requestAuthorization(options: [.alert, .sound, .badge])
         } catch {
+            #if DEBUG
+            print("Sip: requestAuthorization failed: \(error.localizedDescription)")
+            #endif
             return false
         }
     }
@@ -30,6 +54,13 @@ enum NotificationService {
     static func authorizationStatus() async -> UNAuthorizationStatus {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         return settings.authorizationStatus
+    }
+
+    /// Ensures Dock presence + key app status so system sheets/alerts can appear.
+    @MainActor
+    private static func prepareForSystemPermissionUI() {
+        DockPolicy.showInDock()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     static func cancelAllReminders() {
@@ -93,13 +124,29 @@ enum NotificationService {
     /// Opens System Settings → Notifications (best-effort across macOS versions).
     @MainActor
     static func openSystemNotificationSettings() {
+        prepareForSystemPermissionUI()
+
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.liao.Sip"
         let candidates = [
+            // Ventura+ Notifications pane
             "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(bundleID)",
+            // Older preference-pane deep links
             "x-apple.systempreferences:com.apple.preference.notifications",
-            "x-apple.systempreferences:com.apple.preference.notifications?id=\(Bundle.main.bundleIdentifier ?? "com.liao.Sip")"
+            "x-apple.systempreferences:com.apple.preference.notifications?id=\(bundleID)",
+            "x-apple.systempreferences:com.apple.settings.Notifications",
         ]
         for raw in candidates {
             if let url = URL(string: raw), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+
+        // Last resort: open System Settings / System Preferences app.
+        let appIDs = ["com.apple.SystemSettings", "com.apple.systempreferences"]
+        for appID in appIDs {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appID) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
                 return
             }
         }

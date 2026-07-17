@@ -181,8 +181,14 @@ final class AppSession: ObservableObject {
 @MainActor
 enum DockPolicy {
     static func showInDock() {
-        guard NSApp.activationPolicy() != .regular else { return }
-        NSApp.setActivationPolicy(.regular)
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+        // Permission alerts and Settings deep-links need a key app; accessory → regular
+        // alone is not always enough when the user only opened a sheet/menu.
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     /// - Parameter excluding: window currently closing (still listed in `NSApp.windows`).

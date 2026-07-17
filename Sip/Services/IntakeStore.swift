@@ -36,6 +36,11 @@ final class IntakeStore: ObservableObject {
     /// Called after intake or settings change so reminders can reschedule.
     var onStateChanged: ((ChangeKind) -> Void)?
 
+    /// Call after the user grants notification permission so pending reminders are re-armed.
+    func refreshRemindersAfterPermissionChange() {
+        onStateChanged?(.force)
+    }
+
     private let defaults: UserDefaults
     private let entriesKey = "sip.todayEntries"
     private let settingsKey = "sip.settings"
