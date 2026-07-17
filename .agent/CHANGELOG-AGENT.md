@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-17 — 修复 DMG 背景与拖拽安装布局
+
+- **问题**：`release.yml` 把背景指到卷内 `.github:dmg_background.png`，但未拷入卷，背景失效。  
+- **修复**：挂载 RW 卷后写入 `.background/background.png`，AppleScript 用 `.background:background.png`；窗口 660×400 与背景图一致；图标位 (180,200)/(480,200) 对齐箭头。  
+- **品牌背景**：嵌入 App Icon 水滴 + 中英文安装指引；脚本 `.github/scripts/generate_dmg_background.py` 可重生。  
+- **本地冒烟**：BACKGROUND_OK + DS_STORE_OK。  
+- **文件**：`.github/workflows/release.yml`, `.github/dmg_background.png`, `.github/scripts/generate_dmg_background.py`  
+- **提交**：本条一并 commit  
+
 ## 2026-07-17 — 主界面显示下次提醒时间
 
 - 进度环下方增加次要文案：`下次提醒 HH:mm` / `明天 HH:mm` / `提醒已关闭` / `今日已达标…` / `即将提醒`。  
